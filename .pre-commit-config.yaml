@@ -1,0 +1,37 @@
+exclude: ^(bin)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+        types: [python]
+      - id: trailing-whitespace
+        types: [python]
+      - id: mixed-line-ending
+        types: [python]
+      - id: check-added-large-files
+        args: [--maxkb=4096]
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+        args: ["--line-length", "120"]
+  - repo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        name: isort (python)
+        args: ["--profile", "black", "-l", "120"]
+  - repo: https://gitlab.com/pycqa/flake8.git
+    rev: 4.0.1
+    hooks:
+      - id: flake8
+        types: [python]
+        args: ["--max-line-length", "120", "--ignore", "F811,F841,E203,E402,E712,W503"]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.8.0.3
+    hooks:
+      - id: shellcheck
+        exclude: test
+        args: ["--exclude", "SC1091,SC1073,SC2086,SC2128"]
