@@ -15,34 +15,27 @@ jobs:
           python-version: '3.8'
       - name: pre-commit
         run: |
-          # pip install -U pre-commit
-          # pre-commit install --install-hooks
-          #pre-commit run -a
-          ls -l
+          pip install -U pre-commit
+          pre-commit install --install-hooks
+          pre-commit run -a
   pytest:
     runs-on: ubuntu-latest
     needs: pre-commit
     container:
-      image: nvcr.io/nvidia/tritonserver:22.01-py3
-
+      image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v2
-        with:
-          python-version: '3.8'
       - name: test bash
-        run: |
-          ls -al $GITHUB_WORKSPACE
-          tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
-      - name: Run Triton
-        shell: bash
         env:
           TRITON_HOST: localhost
           TRITON_HTTP: 8000
           TRITON_GRPC: 8001
         run: |
-          ls -al
-          curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready && exit 0 || exit 3;
+          tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
           pip install pytest pytest-xdist
-          pytest -n 4 -s
+          pip install .
+          sleep 3
+
+          curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready && exit 0 || exit 3;
+          python -c 'from tritony import InferenceClient; InferenceClient.create_with("sample", "localhost:8001")'
 
