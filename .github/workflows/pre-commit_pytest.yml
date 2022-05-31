@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: pre-commit
     container:
-      image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
+      image: nvcr.io/nvidia/tritonserver:22.01-py3
 
     steps:
       - uses: actions/checkout@v3
