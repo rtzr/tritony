@@ -65,7 +65,9 @@ def init_triton_client(
     return triton_client
 
 
-def get_triton_client(triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient], flag: TritonClientFlag):
+def get_triton_client(
+    triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient], flag: TritonClientFlag
+):
     """
     (required in)
     :param triton_client:
