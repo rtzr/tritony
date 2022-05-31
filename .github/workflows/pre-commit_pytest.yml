@@ -33,7 +33,7 @@ jobs:
           - ${{ github.workspace }}:/workspace
         options: >-
           --entrypoint
-          /workspace/model_repository/run.sh
+          /workspace/tritony/model_repository/run.sh
 
     steps:
       - name: Run Triton
