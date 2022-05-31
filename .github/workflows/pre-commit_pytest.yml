@@ -22,24 +22,22 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     needs: pre-commit
-    services:
-      triton:
-        image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
-        ports:
-          - 8000:8000
-          - 8001:8001
-          - 8002:8002
-        volumes:
-          - ${{ github.workspace }}:/workspace
-        options: >-
-          --entrypoint
-          /workspace/tritony/model_repository/run.sh
+    container:
+      image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
 
     steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+      - name: test bash
+        run: |
+          ls -al $GITHUB_WORKSPACE
+          tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
       - name: Run Triton
         shell: bash
         env:
-          TRITON_HOST: triton
+          TRITON_HOST: localhost
           TRITON_HTTP: 8000
           TRITON_GRPC: 8001
         run: |
