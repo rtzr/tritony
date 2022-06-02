@@ -17,3 +17,18 @@
 
     $ pip install tritony
 
+## Test
+
+
+### With Triton
+
+```bash
+docker run --rm \
+    -v ${PWD}:/models \
+    nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3 \
+    tritonserver --model-repo=/models
+```
+
+```bash
+pytest -m -s tests/test_tritony.py
+```
