@@ -5,18 +5,20 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Union
 
+import grpc
 import numpy as np
 from more_itertools import chunked
+from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
-from tritonclient.utils import InferenceServerException, triton_to_np_dtype
+from tritonclient.utils import InferenceServerException
 
 from tritony import ASYNC_TASKS
 from tritony.helpers import TritonClientFlag, TritonProtocol, get_triton_client, init_triton_client, prepare_triton_flag
 
 logger = logging.getLogger(__name__)
 
-
+TRITON_LOAD_DELAY = float(os.environ.get("TRITON_LOAD_DELAY", 3))
 TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 0.2))
 TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
 TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 5))
@@ -57,11 +59,14 @@ async def send_request_async(inference_client, data_queue, done_event):
             idx, batch_data = data.result()
         elif done in d:
             return ret
-        a_pred = await request_async(
-            inference_client.build_triton_input(batch_data),
-            inference_client.triton_client,
-            timeout=inference_client.client_timeout,
-        )
+        try:
+            a_pred = await request_async(
+                inference_client.build_triton_input(batch_data),
+                inference_client.triton_client,
+                timeout=inference_client.client_timeout,
+            )
+        except InferenceServerException as triton_error:
+            handel_triton_error(triton_error)
         ret.append((idx, a_pred))
         data_queue.task_done()
 
@@ -75,18 +80,10 @@ def handel_triton_error(triton_error: InferenceServerException):
     raise RuntimeError(runtime_msg) from triton_error
 
 
-async def request_async(model_input, triton_client, timeout, retries=TRITON_RETRIES):
+@retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_BACKOFF_COEFF, backoff=2)
+async def request_async(model_input, triton_client, timeout):
     st = time.time()
-    for retry_cnt in range(retries):
-        try:
-            result = triton_client.infer(**model_input, timeout=timeout)
-            break
-        except InferenceServerException as triton_error:
-            logger.info(f"triton_error: {triton_error.message()}")
-            if retry_cnt == retries - 1:
-                handel_triton_error(triton_error)
-            await asyncio.sleep(TRITON_BACKOFF_COEFF * (2**retry_cnt - 1))
-            continue
+    result = triton_client.infer(**model_input, timeout=timeout)
 
     ed = time.time()
     logger.debug(f"{model_input['model_name']} {model_input['inputs'][0].shape()} elapsed: {ed - st:.3f}")
@@ -180,7 +177,7 @@ class InferenceClient:
         self.__version__ = 1
 
         self.flag = flag
-        self.triton_client = None
+        self.triton_client = init_triton_client(self.flag)
         self._renew_triton_client()
 
         self.is_async = self.flag.async_set
@@ -193,23 +190,17 @@ class InferenceClient:
         if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
             self.triton_client.stop_stream()
 
+    @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
     def _renew_triton_client(self):
-        try:
-            self.triton_client = init_triton_client(self.flag)
-            #
-            # triton_client.is_server_live()
-            # triton_client.is_server_ready()
-            # triton_client.is_model_ready()
-            (
-                self.max_batch_size,
-                self.input_name_list,
-                self.output_name_list,
-                self.dtype_list,
-            ) = get_triton_client(self.triton_client, self.flag)
-        except InferenceServerException as triton_error:
-            raise triton_error
-        except Exception as e:
-            raise e
+        self.triton_client.is_server_live()
+        self.triton_client.is_server_ready()
+        self.triton_client.is_model_ready(self.flag.model_name)
+        (
+            self.max_batch_size,
+            self.input_name_list,
+            self.output_name_list,
+            self.dtype_list,
+        ) = get_triton_client(self.triton_client, self.flag)
 
     def _get_request_id(self):
         self.sent_count += 1
@@ -223,32 +214,8 @@ class InferenceClient:
             sequences_list = [sequences_or_dict]
         elif type(sequences_or_dict) is dict:
             sequences_list = [sequences_or_dict[input_name] for input_name in self.input_name_list]
-        if self.is_async:
-            # self._renew_queue()
-            return self._call_async(sequences_list)
-        else:
-            return self.process(sequences_list)
 
-    def _build_and_send(self, request_input):
-        """
-        Deprecated for triton based streaming/async_set
-        two methods are not supported
-
-        only use TritonClient.infer()
-        """
-        # if self.flag.streaming:
-        #     self.triton_client.async_stream_infer(**request_input)
-        # elif self.flag.async_set:
-        #     if self.flag.protocol is TritonProtocol.grpc:
-        #         request_input["callback"] = self.callback
-        #         self.triton_client.async_infer(**request_input)
-        #     else:
-        #         # not recommended for current
-        #         response = self.triton_client.async_infer(**request_input).get_result()
-        # else:
-        response = self.triton_client.infer(**request_input)
-
-        return response
+        return self._call_async(sequences_list)
 
     def build_triton_input(self, _input_list: List[np.array]):
         if self.flag.protocol is TritonProtocol.grpc:
@@ -274,45 +241,6 @@ class InferenceClient:
             client_timeout=self.client_timeout,
         )
         return request_input
-
-    def send(self, _input: np.array):
-        request_input = self.build_triton_input(_input)
-
-        sync_result = self._build_and_send(request_input=request_input)
-        return sync_result
-
-    def preprocess(self, samples: List[Any]) -> np.array:
-        encoded_batch = np.array(samples, dtype=triton_to_np_dtype(self.dtype_list))
-        return encoded_batch
-
-    def postprocess(self, result):
-        if len(self.output_name_list) == 1:
-            return result.as_numpy(self.output_name_list[0])
-        else:
-            return [result.as_numpy(output_name) for output_name in self.output_name_list]
-
-    def process(self, sequnces: List[Any], retries=TRITON_RETRIES):
-        for retry_cnt in range(retries):
-            try:
-                nn_pred = []
-                for sequence in sequnces:
-                    for chunked_data in (
-                        zip(chunked(sequence, self.max_batch_size)) if self.max_batch_size > 0 else [[sequence]]
-                    ):
-                        nn_pred.append(self.send(self.preprocess(chunked_data)))
-
-                nn_pred = list(map(self.postprocess, nn_pred))
-                break
-            except InferenceServerException as triton_error:
-                if retry_cnt == retries - 1:
-                    self.triton_client = None
-                    handel_triton_error(triton_error)
-                time.sleep(TRITON_BACKOFF_COEFF * (2**retry_cnt - 1))
-                continue
-
-        processed_result = np.vstack(nn_pred)
-
-        return processed_result
 
     def _call_async(self, data: List[np.ndarray]) -> Optional[np.ndarray]:
         async_result = asyncio.run(self._call_async_item(data=data))
