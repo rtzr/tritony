@@ -1,4 +1,6 @@
+import json
 from enum import Enum
+from types import SimpleNamespace
 from typing import Union
 
 from tritonclient import grpc as grpcclient
@@ -80,18 +82,18 @@ def get_triton_client(
 
     :return:
     """
-    # Make sure the model matches our requirements, and get some
-    # properties of the model that we need for preprocessing
-    model_metadata = triton_client.get_model_metadata(model_name=flag.model_name, model_version=flag.model_version)
 
-    model_config = triton_client.get_model_config(model_name=flag.model_name, model_version=flag.model_version)
+    def dict_to_attr(obj):
+        return json.loads(json.dumps(obj), object_hook=lambda d: SimpleNamespace(**d))
 
+    args = dict(model_name=flag.model_name, model_version=flag.model_version)
+
+    model_metadata = triton_client.get_model_metadata(**args)
+    model_config = triton_client.get_model_config(**args)
     if flag.protocol is TritonProtocol.http:
-        from attrdict import AttrDict
-
-        model_metadata = AttrDict(model_metadata)
-        model_config = AttrDict(model_config)
-    else:
+        model_metadata = dict_to_attr(model_metadata)
+        model_config = dict_to_attr(model_config)
+    elif flag.protocol is TritonProtocol.grpc:
         model_config = model_config.config
 
     max_batch_size, input_name_list, output_name_list, dtype_list = parse_model(model_metadata, model_config)
@@ -100,11 +102,6 @@ def get_triton_client(
 
 
 def parse_model(model_metadata, model_config):
-    # TODO validate model_metadata
-    model_config.input
-    model_metadata.inputs
-    model_metadata.outputs
-
     return (
         model_config.max_batch_size,
         [input_metadata.name for input_metadata in model_metadata.inputs],
@@ -117,6 +114,7 @@ def prepare_triton_flag(
     model_name,
     url,
     input_dims,
+    protocol="grpc",
     run_async=True,
     streaming=False,
     compression_algorithm="gzip",
@@ -126,7 +124,7 @@ def prepare_triton_flag(
         url=url,
         model_name=model_name,
         model_version="1",
-        protocol="grpc",
+        protocol=protocol,
         streaming=streaming,
         async_set=run_async,
         verbose=False,

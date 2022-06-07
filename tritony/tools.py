@@ -158,6 +158,7 @@ class InferenceClient:
         model: str,
         url: str,
         input_dims: int = 2,
+        protocol: str = "grpc",
         run_async: bool = True,
         secure: bool = False,
         compression_algorithm: Optional[str] = None,
@@ -167,6 +168,7 @@ class InferenceClient:
                 model_name=model,
                 url=url,
                 input_dims=input_dims,
+                protocol=protocol,
                 run_async=run_async,
                 compression_algorithm=compression_algorithm,
                 ssl=secure,
@@ -237,9 +239,16 @@ class InferenceClient:
             request_id=str(request_id),
             model_version=self.flag.model_version,
             outputs=infer_requested_output,
-            compression_algorithm=self.flag.compression_algorithm,
-            client_timeout=self.client_timeout,
         )
+
+        if self.flag.protocol is TritonProtocol.grpc:
+            request_input.update(
+                dict(
+                    compression_algorithm=self.flag.compression_algorithm,
+                    client_timeout=self.client_timeout,
+                )
+            )
+
         return request_input
 
     def _call_async(self, data: List[np.ndarray]) -> Optional[np.ndarray]:

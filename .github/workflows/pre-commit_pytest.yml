@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   pre-commit:
@@ -37,5 +39,4 @@ jobs:
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready && exit 0 || exit 3;
-          python -c 'from tritony import InferenceClient; InferenceClient.create_with("sample", "localhost:8001")'
-
+          pytest -s
