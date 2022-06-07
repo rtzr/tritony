@@ -24,12 +24,9 @@ TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
 TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 5))
 
 
-async def data_generator(data: List[np.ndarray], batch_size, queue, stop):
+async def data_generator(data: List[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
     """
     batch data generator
-
-    추후에 연산량이 많이 들어가는 preprocessor가 들어갈땐
-    multiprocessing으로 preprocessing을 한 후에 넘겨받는식으로 하는 것이 좋을 것
 
     :param data:
     :param batch_size:

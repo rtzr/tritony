@@ -25,6 +25,8 @@ jobs:
     needs: pre-commit
     container:
       image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
+      options:
+        --shm-size=1g
     steps:
       - uses: actions/checkout@v3
       - name: test bash
@@ -32,6 +34,8 @@ jobs:
           TRITON_HOST: localhost
           TRITON_HTTP: 8000
           TRITON_GRPC: 8001
+          TRITON_RETRIES: 2
+          TRITON_CLIENT_TIMEOUT: 1
         run: |
           tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
           pip install pytest pytest-xdist
@@ -39,4 +43,4 @@ jobs:
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready && exit 0 || exit 3;
-          pytest -s
+          pytest -s -n 4
