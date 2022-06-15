@@ -311,7 +311,6 @@ class InferenceClient:
                 }
             )
 
-            self.triton_client = None
             return e
         finally:
             del current_grpc_async_tasks
