@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import grpc
 import numpy as np
-from more_itertools import chunked
 from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
@@ -36,12 +35,12 @@ async def data_generator(data: List[np.ndarray], batch_size: int, queue: asyncio
     """
     if batch_size == 0:
         batch_iterable = zip(*data)
-        for idx, inputs in enumerate(batch_iterable):
-            await queue.put((idx, inputs))
     else:
-        batch_iterable = zip(*[chunked(item, batch_size) for item in data])
-        for idx, inputs_list in enumerate(batch_iterable):
-            await queue.put((idx, [np.asarray(inputs) for inputs in inputs_list]))
+        split_indices = np.arange(batch_size, data[0].shape[0], batch_size)
+        batch_iterable = zip(*[np.array_split(elem, split_indices) for elem in data])
+
+    for idx, inputs_list in enumerate(batch_iterable):
+        await queue.put((idx, inputs_list))
     stop.set()
 
 
