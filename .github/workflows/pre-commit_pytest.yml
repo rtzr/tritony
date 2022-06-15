@@ -42,5 +42,5 @@ jobs:
           pip install .
           sleep 3
 
-          curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready && exit 0 || exit 3;
+          curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready
           pytest -s -n 4
