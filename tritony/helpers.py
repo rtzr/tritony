@@ -1,7 +1,8 @@
 import json
+from collections import defaultdict
 from enum import Enum
 from types import SimpleNamespace
-from typing import Union
+from typing import Optional, Union
 
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
@@ -10,6 +11,10 @@ from tritonclient import http as httpclient
 class TritonProtocol(Enum):
     grpc = "grpc"
     http = "http"
+
+
+COMPRESSION_ALGORITHM_MAP = defaultdict(int)
+COMPRESSION_ALGORITHM_MAP.update({"deflate": 1, "gzip": 2})
 
 
 class TritonClientFlag:
@@ -23,18 +28,21 @@ class TritonClientFlag:
         async_set: bool = False,
         verbose: bool = False,
         input_dims: int = 1,
-        compression_algorithm: str = "grpc",
+        compression_algorithm: Optional[str] = None,
         ssl: bool = False,
     ):
         """
 
         :param url: host:port
-        :param model_name: gptrescorer
-        :param model_version: ""
-        :param protocol: grpc
+        :param model_name:
+        :param model_version:
+        :param protocol:
         :param streaming:
         :param async_set:
         :param verbose:
+        :param input_dims:
+        :param compression_algorithm:
+        :param ssl:
         """
         self.url = url
         self.async_set = async_set
@@ -44,7 +52,7 @@ class TritonClientFlag:
         self.streaming = streaming
         self.verbose = verbose
         self.input_dims = input_dims
-        self.compression_algorithm = compression_algorithm
+        self.compression_algorithm = (compression_algorithm,)
         self.ssl = ssl
 
 
@@ -117,7 +125,7 @@ def prepare_triton_flag(
     protocol="grpc",
     run_async=True,
     streaming=False,
-    compression_algorithm="gzip",
+    compression_algorithm=None,
     ssl=False,
 ):
     triton_flag = TritonClientFlag(
