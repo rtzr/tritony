@@ -26,6 +26,7 @@ class TritonClientFlag:
         protocol: str = "grpc",
         streaming: bool = True,
         async_set: bool = False,
+        concurrency: int = 6,
         verbose: bool = False,
         input_dims: int = 1,
         compression_algorithm: Optional[str] = None,
@@ -45,10 +46,11 @@ class TritonClientFlag:
         :param ssl:
         """
         self.url = url
-        self.async_set = async_set
         self.model_version = model_version
         self.model_name = model_name
         self.protocol = TritonProtocol(protocol.lower())
+        self.async_set = async_set
+        self.concurrency = concurrency
         self.streaming = streaming
         self.verbose = verbose
         self.input_dims = input_dims
@@ -69,7 +71,7 @@ def init_triton_client(
     else:
         # Specify large enough concurrency to handle the
         # the number of requests.
-        concurrency = 20 if flag.async_set else 1
+        concurrency = flag.concurrency if flag.async_set else 1
         triton_client = httpclient.InferenceServerClient(url=flag.url, verbose=flag.verbose, concurrency=concurrency)
 
     return triton_client
@@ -124,6 +126,7 @@ def prepare_triton_flag(
     input_dims,
     protocol="grpc",
     run_async=True,
+    concurrency=6,
     streaming=False,
     compression_algorithm=None,
     ssl=False,
@@ -135,6 +138,7 @@ def prepare_triton_flag(
         protocol=protocol,
         streaming=streaming,
         async_set=run_async,
+        concurrency=concurrency,
         verbose=False,
         input_dims=input_dims,  # without batch
         compression_algorithm=compression_algorithm if not streaming else None,

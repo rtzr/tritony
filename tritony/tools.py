@@ -121,8 +121,8 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
 
         result = InferResult(_call_future.result())
     else:
-        # TODO: implement http client with aiohttp
-        result = triton_client.infer(**model_input, timeout=timeout)
+        # TODO: implement http client more efficiently
+        result = triton_client.async_infer(**model_input, timeout=timeout).get_result()
 
     ed = time.time()
     logger.debug(f"{model_input['model_name']} {model_input['inputs'][0].shape()} elapsed: {ed - st:.3f}")
@@ -199,6 +199,7 @@ class InferenceClient:
         input_dims: int = 2,
         protocol: str = "grpc",
         run_async: bool = True,
+        concurrency: int = ASYNC_TASKS,
         secure: bool = False,
         compression_algorithm: Optional[str] = None,
     ):
@@ -209,6 +210,7 @@ class InferenceClient:
                 input_dims=input_dims,
                 protocol=protocol,
                 run_async=run_async,
+                concurrency=concurrency,
                 compression_algorithm=compression_algorithm,
                 ssl=secure,
             )
@@ -218,14 +220,20 @@ class InferenceClient:
         self.__version__ = 1
 
         self.flag = flag
-        self.triton_client: Union[List[grpcclient.InferenceServerClient], List[httpclient.InferenceServerClient]] = [
-            init_triton_client(self.flag) for _ in range(ASYNC_TASKS)
-        ]
+        if self.flag.protocol is TritonProtocol.grpc:
+            self.triton_client: List[grpcclient.InferenceServerClient] = [
+                init_triton_client(self.flag) for _ in range(self.flag.concurrency)
+            ]
+        else:
+            self.triton_client: List[httpclient.InferenceServerClient] = [
+                init_triton_client(self.flag)
+            ] * self.flag.concurrency
         self._renew_triton_client()
 
         self.is_async = self.flag.async_set
         self.client_timeout = TRITON_CLIENT_TIMEOUT
 
+        self.output_kwargs = {}
         self.sent_count = 0
         self.processed_count = 0
 
