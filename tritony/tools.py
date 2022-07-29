@@ -1,8 +1,10 @@
 import asyncio
+import functools
 import itertools
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
 import grpc
@@ -30,6 +32,8 @@ TRITON_LOAD_DELAY = float(os.environ.get("TRITON_LOAD_DELAY", 3))
 TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 0.2))
 TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
 TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 5))
+
+_executor = ThreadPoolExecutor(max_workers=ASYNC_TASKS)
 
 
 async def data_generator(data: List[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
@@ -97,11 +101,7 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
     st = time.time()
 
     if protocol == TritonProtocol.grpc:
-        done = asyncio.Event()
         loop = asyncio.get_running_loop()
-
-        async def callback():
-            done.set()
 
         request = grpc_get_inference_request(
             **model_input,
@@ -111,15 +111,14 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
             sequence_start=False,
             sequence_end=False,
         )
-        _call_future = triton_client._client_stub.ModelInfer.future(
-            request=request, timeout=timeout, compression=COMPRESSION_ALGORITHM_MAP[compression]
+        func_partial = functools.partial(
+            triton_client._client_stub.ModelInfer,
+            request=request,
+            timeout=timeout,
+            compression=COMPRESSION_ALGORITHM_MAP[compression],
         )
-        _call_future.add_done_callback(
-            lambda _: asyncio.run_coroutine_threadsafe(callback(), loop) if loop.is_running() else None
-        )
-        await done.wait()
-
-        result = InferResult(_call_future.result())
+        ModelInferResponse = await loop.run_in_executor(_executor, func_partial)
+        result = InferResult(ModelInferResponse)
     else:
         # TODO: implement http client more efficiently
         result = triton_client.async_infer(**model_input, timeout=timeout).get_result()
@@ -221,13 +220,9 @@ class InferenceClient:
 
         self.flag = flag
         if self.flag.protocol is TritonProtocol.grpc:
-            self.triton_client: List[grpcclient.InferenceServerClient] = [
-                init_triton_client(self.flag) for _ in range(self.flag.concurrency)
-            ]
+            self.triton_client: grpcclient.InferenceServerClient = init_triton_client(self.flag)
         else:
-            self.triton_client: List[httpclient.InferenceServerClient] = [
-                init_triton_client(self.flag)
-            ] * self.flag.concurrency
+            self.triton_client: httpclient.InferenceServerClient = init_triton_client(self.flag)
         self._renew_triton_client()
 
         self.is_async = self.flag.async_set
@@ -243,15 +238,15 @@ class InferenceClient:
 
     @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
     def _renew_triton_client(self):
-        self.triton_client[0].is_server_live()
-        self.triton_client[0].is_server_ready()
-        self.triton_client[0].is_model_ready(self.flag.model_name)
+        self.triton_client.is_server_live()
+        self.triton_client.is_server_ready()
+        self.triton_client.is_model_ready(self.flag.model_name)
         (
             self.max_batch_size,
             self.input_name_list,
             self.output_name_list,
             self.dtype_list,
-        ) = get_triton_client(self.triton_client[0], self.flag)
+        ) = get_triton_client(self.triton_client, self.flag)
 
     def _get_request_id(self):
         self.sent_count += 1
@@ -313,7 +308,7 @@ class InferenceClient:
             current_grpc_async_tasks.append(generator)
 
             predict_tasks = [
-                asyncio.create_task(send_request_async(self, data_queue, done_event, self.triton_client[idx]))
+                asyncio.create_task(send_request_async(self, data_queue, done_event, self.triton_client))
                 for idx in range(ASYNC_TASKS)
             ]
             current_grpc_async_tasks.extend(predict_tasks)
