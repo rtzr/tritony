@@ -320,7 +320,18 @@ class InferenceClient:
             if self.max_batch_size == 0:
                 result_by_output_name = list(zip(*result_by_req_id))
             else:
-                result_by_output_name = list(map(lambda ll: np.concatenate(ll, axis=0), zip(*result_by_req_id)))
+                results_grouped = list(zip(*result_by_req_id))
+                group_shapes = [item[0].shape[1:] for item in results_grouped]  # without batch
+                is_concat_possible = [
+                    all(map(lambda xx: xx.shape[1:] == group_shape, result_group))
+                    for result_group, group_shape in zip(results_grouped, group_shapes)
+                ]
+
+                result_by_output_name = [
+                    np.concatenate(result_group, axis=0) if possible else result_group
+                    for possible, result_group in zip(is_concat_possible, results_grouped)
+                ]
+                # result_by_output_name = list(map(lambda ll: np.concatenate(ll, axis=0), ))
 
             if len(result_by_output_name) == 1:
                 result_by_output_name = result_by_output_name[0]
