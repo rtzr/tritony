@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 TRITON_LOAD_DELAY = float(os.environ.get("TRITON_LOAD_DELAY", 3))
 TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 0.2))
 TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
-TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 5))
+TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 30))
 
 _executor = ThreadPoolExecutor(max_workers=ASYNC_TASKS)
 
