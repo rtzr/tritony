@@ -14,8 +14,8 @@ with open(os.path.join(HERE, "{0}/version.py".format(PACKAGE_NAME))) as fr:
 install_requires = """
 tritonclient[all]>=2.18.0
 protobuf>=3.5.0,<3.20
-orjson==3.6.8
-reretry==0.11.1
+orjson>=3.6.8
+reretry>=0.11.1
 """.strip().split(
     "\n"
 )
@@ -81,7 +81,7 @@ setup(
         include=[
             PACKAGE_NAME,
         ],
-        exclude=["test"],
+        exclude=["tests"],
     ),
     install_requires=install_requires,
     extras_require={"dev": dev_extra_requires},
