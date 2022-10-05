@@ -1,8 +1,6 @@
 import os
-import sys
-from shutil import rmtree
 
-from setuptools import Command, find_packages, setup
+from setuptools import find_packages, setup
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 
@@ -10,6 +8,9 @@ __version__ = None
 PACKAGE_NAME = "tritony"
 with open(os.path.join(HERE, "{0}/version.py".format(PACKAGE_NAME))) as fr:
     exec(fr.read())
+
+with open("README.md", mode="r", encoding="utf-8") as fh:
+    long_description = fh.read()
 
 install_requires = """
 tritonclient[all]>=2.18.0
@@ -26,56 +27,51 @@ pre-commit
     "\n"
 )
 
-
-# brought from https://github.com/navdeep-G/setup.py
-class UploadCommand(Command):
-    """Support setup.py upload."""
-
-    description = "Build and publish the package."
-    user_options = []
-
-    @staticmethod
-    def status(s):
-        """Prints things in bold."""
-        print("\033[1m{0}\033[0m".format(s))
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        try:
-            self.status("Removing previous builds…")
-            os.system("rm -vrf ./*.egg-info")
-            rmtree(os.path.join(HERE, "dist"))
-        except OSError:
-            pass
-
-        self.status("Building Source and Wheel (universal) distribution…")
-        os.system("{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
-
-        self.status("Uploading the package to PyPI via Twine…")
-        os.system("twine upload dist/* -r rtzr")
-
-        self.status("Creating git tag")
-        os.system(f"git tag -a -f -m '' v{__version__}")
-
-        self.status("Pushing git tags…")
-        os.system(f"git push -v origin refs/tags/v{__version__}")
-
-        sys.exit()
-
+data_files = [
+    ("", ["LICENSE"]),
+]
 
 setup(
     name=PACKAGE_NAME,
     version=__version__,
-    url="",
-    license="modified MIT",
+    license="BSD",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/rtzr/tritony",
+    keywords=[
+        "grpc",
+        "http",
+        "triton",
+        "tensorrt",
+        "inference",
+        "server",
+        "service",
+        "client",
+        "nvidia",
+        "rtzr",
+    ],
+    classifiers=[
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Science/Research",
+        "Intended Audience :: Information Technology",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Image Recognition",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Software Development :: Libraries",
+        "Topic :: Utilities",
+        "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Environment :: Console",
+        "Natural Language :: English",
+        "Operating System :: OS Independent",
+    ],
     author="Arthur",
     author_email="arthur@rtzr.ai",
-    description="",
+    description="Tiny configuration for Triton Inference Server",
     packages=find_packages(
         where=".",
         include=[
@@ -86,10 +82,5 @@ setup(
     install_requires=install_requires,
     extras_require={"dev": dev_extra_requires},
     zip_safe=False,
-    include_package_data=True,
-    package_data={},
-    cmdclass={
-        "deploy": UploadCommand,
-    },
+    data_files=data_files,
 )
-# rtzr
