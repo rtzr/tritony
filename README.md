@@ -6,6 +6,7 @@
 
 - [x] Simple configuration. Only `$host:$port` and `$model_name` are required.
 - [x] Generating asynchronous requests with `asyncio.Queue`
+- [ ] Support async tritonclient
 
 ## Requirements
 
