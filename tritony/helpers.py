@@ -124,6 +124,7 @@ def prepare_triton_flag(
     model_name,
     url,
     input_dims,
+    model_version="1",
     protocol="grpc",
     run_async=True,
     concurrency=6,
@@ -134,7 +135,7 @@ def prepare_triton_flag(
     triton_flag = TritonClientFlag(
         url=url,
         model_name=model_name,
-        model_version="1",
+        model_version=model_version,
         protocol=protocol,
         streaming=streaming,
         async_set=run_async,
