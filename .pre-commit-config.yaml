@@ -23,8 +23,8 @@ repos:
       - id: isort
         name: isort (python)
         args: ["--profile", "black", "-l", "120"]
-  - repo: https://gitlab.com/pycqa/flake8.git
-    rev: 4.0.1
+  - repo: https://github.com/pycqa/flake8.git
+    rev: 5.0.3
     hooks:
       - id: flake8
         types: [python]
