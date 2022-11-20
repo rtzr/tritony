@@ -242,7 +242,7 @@ class InferenceClient:
     def _renew_triton_client(self):
         self.triton_client.is_server_live()
         self.triton_client.is_server_ready()
-        self.triton_client.is_model_ready(self.flag.model_name)
+        self.triton_client.is_model_ready(self.flag.model_name, self.flag.model_version)
         (
             self.max_batch_size,
             self.input_name_list,
@@ -254,8 +254,25 @@ class InferenceClient:
         self.sent_count += 1
         return self.sent_count
 
-    def __call__(self, sequences_or_dict: Union[List[Any], Dict[str, List[Any]]]):
+    def __call__(
+        self,
+        sequences_or_dict: Union[List[Any], Dict[str, List[Any]]],
+        model_name: str = None,
+        model_version: str = None,
+    ):
         if self.triton_client is None:
+            self._renew_triton_client()
+
+        if (model_name is not None and model_name != self.flag.model_name) or (
+            model_version is not None and model_version != self.flag.model_version
+        ):
+            if model_name is not None:
+                self.flag.model_name = model_name
+                if model_version is None:
+                    self.flag.model_version = "1"
+            if model_version is not None:
+                self.flag.model_version = model_version
+
             self._renew_triton_client()
 
         if type(sequences_or_dict) in [list, np.ndarray]:
