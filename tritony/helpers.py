@@ -2,8 +2,9 @@ import json
 from collections import defaultdict
 from enum import Enum
 from types import SimpleNamespace
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
+import attrs
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
 
@@ -17,45 +18,37 @@ COMPRESSION_ALGORITHM_MAP = defaultdict(int)
 COMPRESSION_ALGORITHM_MAP.update({"deflate": 1, "gzip": 2})
 
 
-class TritonClientFlag:
-    def __init__(
-        self,
-        url: str,
-        model_name: str,
-        model_version: str = "",
-        protocol: str = "grpc",
-        streaming: bool = True,
-        async_set: bool = False,
-        concurrency: int = 6,
-        verbose: bool = False,
-        input_dims: int = 1,
-        compression_algorithm: Optional[str] = None,
-        ssl: bool = False,
-    ):
-        """
+def dict_to_attr(obj: dict[str, Any]) -> SimpleNamespace:
+    """
+    Convert dict to attr like object as SimpleNamespace
+    Only for grpc client's output
+    :param obj:
+    :return:
+    """
+    return json.loads(json.dumps(obj), object_hook=lambda d: SimpleNamespace(**d))
 
-        :param url: host:port
-        :param model_name:
-        :param model_version:
-        :param protocol:
-        :param streaming:
-        :param async_set:
-        :param verbose:
-        :param input_dims:
-        :param compression_algorithm:
-        :param ssl:
-        """
-        self.url = url
-        self.model_version = model_version
-        self.model_name = model_name
-        self.protocol = TritonProtocol(protocol.lower())
-        self.async_set = async_set
-        self.concurrency = concurrency
-        self.streaming = streaming
-        self.verbose = verbose
-        self.input_dims = input_dims
-        self.compression_algorithm = (compression_algorithm,)
-        self.ssl = ssl
+
+@attrs.define
+class TritonClientFlag:
+    """
+    run_async=True,
+    concurrency=6,
+    streaming=False,
+    compression_algorithm=None,
+    ssl=False,
+    """
+
+    url: str
+    model_name: str
+    model_version: str = "1"
+    protocol: TritonProtocol = attrs.field(converter=TritonProtocol, default=TritonProtocol.grpc)
+    streaming: bool = False  # TODO: not implemented
+    async_set: bool = True  # TODO: not totally implemented
+    concurrency: int = 6  # only for TritonProtocol.http client
+    verbose: bool = False
+    input_dims: int = 1
+    compression_algorithm: Optional[str] = None
+    ssl: bool = False
 
 
 def init_triton_client(
@@ -93,9 +86,6 @@ def get_triton_client(
     :return:
     """
 
-    def dict_to_attr(obj):
-        return json.loads(json.dumps(obj), object_hook=lambda d: SimpleNamespace(**d))
-
     args = dict(model_name=flag.model_name, model_version=flag.model_version)
 
     model_metadata = triton_client.get_model_metadata(**args)
@@ -118,32 +108,3 @@ def parse_model(model_metadata, model_config):
         [output_metadata.name for output_metadata in model_metadata.outputs],
         [input_metadata.datatype for input_metadata in model_metadata.inputs],
     )
-
-
-def prepare_triton_flag(
-    model_name,
-    url,
-    input_dims,
-    model_version="1",
-    protocol="grpc",
-    run_async=True,
-    concurrency=6,
-    streaming=False,
-    compression_algorithm=None,
-    ssl=False,
-):
-    triton_flag = TritonClientFlag(
-        url=url,
-        model_name=model_name,
-        model_version=model_version,
-        protocol=protocol,
-        streaming=streaming,
-        async_set=run_async,
-        concurrency=concurrency,
-        verbose=False,
-        input_dims=input_dims,  # without batch
-        compression_algorithm=compression_algorithm if not streaming else None,
-        ssl=ssl,
-    )
-
-    return triton_flag

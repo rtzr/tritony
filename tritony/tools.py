@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import grpc
 import numpy as np
+from attrs import define
 from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
@@ -23,7 +24,6 @@ from tritony.helpers import (
     TritonProtocol,
     get_triton_client,
     init_triton_client,
-    prepare_triton_flag,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,64 +129,15 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
     return [result.as_numpy(outputs.name()) for outputs in model_input["outputs"]]
 
 
-def worker_parse_args(parser):
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Enable verbose output",
-    )
-    parser.add_argument(
-        "-a",
-        "--async",
-        dest="async_set",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Use asynchronous inference API",
-    )
-    parser.add_argument(
-        "--streaming",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Use streaming inference API. " + "The flag is only available with gRPC protocol.",
-    )
-    parser.add_argument("-m", "--model-name", type=str, required=True, help="Name of model")
-    parser.add_argument(
-        "-x",
-        "--model-version",
-        type=str,
-        required=False,
-        default="",
-        help="Version of model. Default is to use latest version.",
-    )
-    parser.add_argument(
-        "-b",
-        "--batch-size",
-        type=int,
-        required=False,
-        default=64,
-        help="Batch size. Default is 1.",
-    )
-    parser.add_argument(
-        "-u",
-        "--url",
-        type=str,
-        required=False,
-        default="localhost:8000",
-        help="Inference server URL. Default is localhost:8000.",
-    )
-    parser.add_argument(
-        "-i",
-        "--protocol",
-        type=str,
-        required=False,
-        default="HTTP",
-        help="Protocol (HTTP/gRPC) used to communicate with " + "the inference service. Default is HTTP.",
-    )
+@define
+class TritonModelSpec:
+    name: str
+    input_name: List[str]
+    input_dtype: List[str]
+
+    output_name: List[str]
+
+    model_version: str = "1"
 
 
 class InferenceClient:
@@ -204,14 +155,14 @@ class InferenceClient:
         compression_algorithm: Optional[str] = None,
     ):
         return cls(
-            prepare_triton_flag(
-                model_name=model,
+            TritonClientFlag(
                 url=url,
-                input_dims=input_dims,
+                model_name=model,
                 model_version=model_version,
                 protocol=protocol,
-                run_async=run_async,
+                async_set=run_async,
                 concurrency=concurrency,
+                input_dims=input_dims,
                 compression_algorithm=compression_algorithm,
                 ssl=secure,
             )
@@ -221,34 +172,38 @@ class InferenceClient:
         self.__version__ = 1
 
         self.flag = flag
-        if self.flag.protocol is TritonProtocol.grpc:
-            self.triton_client: grpcclient.InferenceServerClient = init_triton_client(self.flag)
-        else:
-            self.triton_client: httpclient.InferenceServerClient = init_triton_client(self.flag)
-        self._renew_triton_client()
-
         self.is_async = self.flag.async_set
         self.client_timeout = TRITON_CLIENT_TIMEOUT
+        self._triton_client = None
 
         self.output_kwargs = {}
         self.sent_count = 0
         self.processed_count = 0
+
+    @property
+    def triton_client(self):
+        if self.flag.protocol is TritonProtocol.grpc:
+            self._triton_client: grpcclient.InferenceServerClient = init_triton_client(self.flag)
+        else:
+            self._triton_client: httpclient.InferenceServerClient = init_triton_client(self.flag)
+        self._renew_triton_client(self._triton_client)
+        return self._triton_client
 
     def __del__(self):
         if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
             self.triton_client.stop_stream()
 
     @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
-    def _renew_triton_client(self):
-        self.triton_client.is_server_live()
-        self.triton_client.is_server_ready()
-        self.triton_client.is_model_ready(self.flag.model_name, self.flag.model_version)
+    def _renew_triton_client(self, triton_client):
+        triton_client.is_server_live()
+        triton_client.is_server_ready()
+        triton_client.is_model_ready(self.flag.model_name, self.flag.model_version)
         (
             self.max_batch_size,
             self.input_name_list,
             self.output_name_list,
             self.dtype_list,
-        ) = get_triton_client(self.triton_client, self.flag)
+        ) = get_triton_client(triton_client, self.flag)
 
     def _get_request_id(self):
         self.sent_count += 1
@@ -261,18 +216,6 @@ class InferenceClient:
         model_version: str = None,
     ):
         if self.triton_client is None:
-            self._renew_triton_client()
-
-        if (model_name is not None and model_name != self.flag.model_name) or (
-            model_version is not None and model_version != self.flag.model_version
-        ):
-            if model_name is not None:
-                self.flag.model_name = model_name
-                if model_version is None:
-                    self.flag.model_version = "1"
-            if model_version is not None:
-                self.flag.model_version = model_version
-
             self._renew_triton_client()
 
         if type(sequences_or_dict) in [list, np.ndarray]:
