@@ -1,7 +1,7 @@
 exclude: ^(bin)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.0.1
+    rev: v4.4.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
@@ -13,7 +13,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=4096]
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 22.10.0
     hooks:
       - id: black
         args: ["--line-length", "120"]
@@ -24,13 +24,13 @@ repos:
         name: isort (python)
         args: ["--profile", "black", "-l", "120"]
   - repo: https://github.com/pycqa/flake8.git
-    rev: 5.0.3
+    rev: 6.0.0
     hooks:
       - id: flake8
         types: [python]
         args: ["--max-line-length", "120", "--ignore", "F811,F841,E203,E402,E712,W503"]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.8.0.3
+    rev: v0.8.0.4
     hooks:
       - id: shellcheck
         exclude: test

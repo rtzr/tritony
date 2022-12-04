@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.10'
       - name: pre-commit
         run: |
           pip install -U pre-commit
@@ -24,11 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: pre-commit
     container:
-      image: nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3
+      image: nvcr.io/nvidia/tritonserver:22.08-pyt-python-py3
       options:
         --shm-size=1g
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       - name: test bash
         env:
           TRITON_HOST: localhost
