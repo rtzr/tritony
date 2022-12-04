@@ -1,5 +1,6 @@
 import os
 
+import grpc
 import numpy as np
 import pytest
 
@@ -26,6 +27,9 @@ def test_basics(protocol_and_port):
     result = client(sample)
     print(f"Result: {np.isclose(result, sample).all()}")
 
+    result = client({"model_in": sample})
+    print(f"Dict Result: {np.isclose(result, sample).all()}")
+
 
 def test_batching(protocol_and_port):
     protocol, port = protocol_and_port
@@ -37,3 +41,20 @@ def test_batching(protocol_and_port):
     # client automatically makes sub batches with (50, 2, 100)
     result = client(sample)
     print(f"Result: {np.isclose(result, sample).all()}")
+
+
+def test_exception(protocol_and_port):
+    protocol, port = protocol_and_port
+    print(f"{__name__}, Testing {protocol}")
+
+    client = InferenceClient.create_with("sample_autobatching", f"{TRITON_HOST}:{port}", protocol=protocol)
+
+    sample = np.random.rand(100, 100, 100).astype(np.float32)
+    # client automatically makes sub batches with (50, 2, 100)
+
+    try:
+        result = client(sample)
+    except RuntimeError as e:
+        print(type(e))
+    except grpc._channel._InactiveRpcError as e:
+        print(f"\n\n\n\ndetails: {e.details()}")

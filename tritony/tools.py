@@ -183,8 +183,10 @@ class InferenceClient:
         return self._triton_client
 
     def __del__(self):
-        if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
-            self.triton_client.stop_stream()
+        # Not supporting streaming
+        # if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
+        #     self.triton_client.stop_stream()
+        pass
 
     @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
     def _renew_triton_client(self, triton_client, model_name: str | None = None, model_version: str | None = None):
@@ -219,13 +221,11 @@ class InferenceClient:
         model_name: str | None = None,
         model_version: str | None = None,
     ):
-        if self.triton_client is None:
-            self._renew_triton_client()
         if model_name is None:
             model_name = self.flag.model_name
         if model_version is None:
             model_version = self.flag.model_version
-        else:
+        if (model_name, model_version) not in self.model_specs:
             self._renew_triton_client(self.triton_client, model_name, model_version)
 
         model_spec = self.model_specs[(model_name, model_version)]
