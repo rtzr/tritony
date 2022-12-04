@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v3
         with:
           python-version: '3.10'
       - name: pre-commit
@@ -29,9 +29,6 @@ jobs:
         --shm-size=1g
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
       - name: test bash
         env:
           TRITON_HOST: localhost

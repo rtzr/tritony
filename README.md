@@ -55,6 +55,7 @@ if __name__ == "__main__":
 
 - [x] Simple configuration. Only `$host:$port` and `$model_name` are required.
 - [x] Generating asynchronous requests with `asyncio.Queue`
+- [x] Simple Model switching
 - [ ] Support async tritonclient
 
 ## Requirements
