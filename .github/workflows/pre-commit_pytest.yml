@@ -42,4 +42,5 @@ jobs:
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready
-          pytest -s -n 4
+          pytest -n 4 --cov=./ --cov-report=xml
+      - uses: codecov/codecov-action@v3
