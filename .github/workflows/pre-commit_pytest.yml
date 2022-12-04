@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: pre-commit
     container:
-      image: nvcr.io/nvidia/tritonserver:22.08-pyt-python-py3
+      image: nvcr.io/nvidia/tritonserver:23.03-pyt-python-py3
       options:
         --shm-size=1g
     steps:
@@ -42,4 +42,5 @@ jobs:
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready
-          pytest -s -n 4
+          pytest -n 4 -x --cov-report term-missing --cov=tritony --cov-report=xml --disable-pytest-warnings --mpl
+      - uses: codecov/codecov-action@v3
