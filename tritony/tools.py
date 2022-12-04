@@ -221,8 +221,9 @@ class InferenceClient:
     ):
         if self.triton_client is None:
             self._renew_triton_client()
-        if model_name is None or model_version is None:
+        if model_name is None:
             model_name = self.flag.model_name
+        if model_version is None:
             model_version = self.flag.model_version
         else:
             self._renew_triton_client(self.triton_client, model_name, model_version)
