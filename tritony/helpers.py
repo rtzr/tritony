@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, Optional, Union
 
 import attrs
+from attrs import define
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
 
@@ -28,6 +29,19 @@ def dict_to_attr(obj: dict[str, Any]) -> SimpleNamespace:
     return json.loads(json.dumps(obj), object_hook=lambda d: SimpleNamespace(**d))
 
 
+@define
+class TritonModelSpec:
+    name: str
+
+    max_batch_size: int
+    input_name: list[str]
+    input_dtype: list[str]
+
+    output_name: list[str]
+
+    model_version: str = "1"
+
+
 @attrs.define
 class TritonClientFlag:
     """
@@ -41,7 +55,7 @@ class TritonClientFlag:
     url: str
     model_name: str
     model_version: str = "1"
-    protocol: TritonProtocol = attrs.field(converter=TritonProtocol, default=TritonProtocol.grpc)
+    protocol: TritonProtocol | str = attrs.field(converter=TritonProtocol, default=TritonProtocol.grpc)
     streaming: bool = False  # TODO: not implemented
     async_set: bool = True  # TODO: not totally implemented
     concurrency: int = 6  # only for TritonProtocol.http client
@@ -71,7 +85,10 @@ def init_triton_client(
 
 
 def get_triton_client(
-    triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient], flag: TritonClientFlag
+    triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient],
+    model_name: str,
+    model_version: str,
+    protocol: TritonProtocol,
 ):
     """
     (required in)
@@ -86,14 +103,14 @@ def get_triton_client(
     :return:
     """
 
-    args = dict(model_name=flag.model_name, model_version=flag.model_version)
+    args = dict(model_name=model_name, model_version=model_version)
 
     model_metadata = triton_client.get_model_metadata(**args)
     model_config = triton_client.get_model_config(**args)
-    if flag.protocol is TritonProtocol.http:
+    if protocol is TritonProtocol.http:
         model_metadata = dict_to_attr(model_metadata)
         model_config = dict_to_attr(model_config)
-    elif flag.protocol is TritonProtocol.grpc:
+    elif protocol is TritonProtocol.grpc:
         model_config = model_config.config
 
     max_batch_size, input_name_list, output_name_list, dtype_list = parse_model(model_metadata, model_config)
