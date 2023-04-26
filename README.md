@@ -1,5 +1,6 @@
 # tritony - Tiny configuration for Triton Inference Server
 
+![Pypi](https://badge.fury.io/py/tritony.svg)
 ![CI](https://github.com/rtzr/tritony/actions/workflows/pre-commit_pytest.yml/badge.svg)
 
 ## What is this?
