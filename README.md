@@ -2,6 +2,7 @@
 
 ![Pypi](https://badge.fury.io/py/tritony.svg)
 ![CI](https://github.com/rtzr/tritony/actions/workflows/pre-commit_pytest.yml/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/rtzr/tritony/badge.svg?branch=main)](https://coveralls.io/github/rtzr/tritony?branch=main)
 
 ## What is this?
 
