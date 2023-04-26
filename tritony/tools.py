@@ -106,6 +106,8 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
     if protocol == TritonProtocol.grpc:
         loop = asyncio.get_running_loop()
 
+        if "parameters" in grpc_get_inference_request.__code__.co_varnames:
+            model_input["parameters"] = None
         request = grpc_get_inference_request(
             **model_input,
             priority=0,
