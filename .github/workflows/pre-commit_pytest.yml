@@ -42,5 +42,21 @@ jobs:
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready
-          pytest -n 4 -x --cov-report term-missing --cov=tritony --cov-report=xml --disable-pytest-warnings --mpl
-      - uses: codecov/codecov-action@v3
+          coverage run --source=tritony -m pytest
+      - name: Upload coverage data to coveralls.io
+        run: coveralls --service=github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_PARALLEL: true
+  coveralls:
+    name: Indicate completion to coveralls.io
+    needs: pytest
+    runs-on: ubuntu-latest
+    container: python:3-slim
+    steps:
+    - name: Finished
+      run: |
+        pip3 install --upgrade coveralls
+        coveralls --service=github --finish
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
