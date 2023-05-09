@@ -6,6 +6,7 @@ import itertools
 import logging
 import os
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
@@ -166,10 +167,12 @@ class InferenceClient:
         self.__version__ = 1
 
         self.flag = flag
+        self.default_model = (flag.model_name, flag.model_version)
         self.model_specs = {}
         self.is_async = self.flag.async_set
         self.client_timeout = TRITON_CLIENT_TIMEOUT
         self._triton_client = None
+        self.triton_client
 
         self.output_kwargs = {}
         self.sent_count = 0
@@ -183,6 +186,18 @@ class InferenceClient:
             self._triton_client: httpclient.InferenceServerClient = init_triton_client(self.flag)
         self._renew_triton_client(self._triton_client)
         return self._triton_client
+
+    @property
+    def default_model_spec(self):
+        return self.model_specs[self.default_model]
+
+    @property
+    def input_name_list(self):
+        warnings.warn(
+            "input_name_list is deprecated, please use 'default_model_spec.input_name' instead", DeprecationWarning
+        )
+
+        return self.default_model_spec.input_name
 
     def __del__(self):
         # Not supporting streaming
@@ -201,7 +216,7 @@ class InferenceClient:
         triton_client.is_server_ready()
         triton_client.is_model_ready(model_name, model_version)
 
-        (max_batch_size, input_name_list, output_name_list, dtype_list,) = get_triton_client(
+        (max_batch_size, input_name_list, output_name_list, dtype_list) = get_triton_client(
             triton_client, model_name=model_name, model_version=model_version, protocol=self.flag.protocol
         )
 
