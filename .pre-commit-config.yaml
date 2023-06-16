@@ -13,7 +13,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=4096]
   - repo: https://github.com/psf/black
-    rev: 22.10.0
+    rev: 23.3.0
     hooks:
       - id: black
         args: ["--line-length", "120"]
@@ -30,7 +30,7 @@ repos:
         types: [python]
         args: ["--max-line-length", "120", "--ignore", "F811,F841,E203,E402,E712,W503"]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.8.0.4
+    rev: v0.9.0.5
     hooks:
       - id: shellcheck
         exclude: test
