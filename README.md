@@ -53,6 +53,12 @@ if __name__ == "__main__":
         print(f"{max_value} ({arg_max}) = {class_name}")
 ```
 
+## Release Notes
+
+- 23.06.16 Support tritonclient>=2.34.0
+- Loosely modified the requirements related to tritonclient
+
+
 ## Key Features
 
 - [x] Simple configuration. Only `$host:$port` and `$model_name` are required.

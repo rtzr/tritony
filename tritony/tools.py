@@ -16,7 +16,14 @@ from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
 from tritonclient.grpc import InferResult
-from tritonclient.grpc import _get_inference_request as grpc_get_inference_request
+
+try:
+    from tritonclient.grpc import _get_inference_request as grpc_get_inference_request
+except ImportError:
+    logging.info("tritonclient[all]>=2.34.0")
+    from tritonclient.grpc._utils import _get_inference_request as grpc_get_inference_request
+
+
 from tritonclient.utils import InferenceServerException
 
 from tritony import ASYNC_TASKS
