@@ -6,7 +6,6 @@ import itertools
 import logging
 import os
 import time
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
@@ -198,14 +197,6 @@ class InferenceClient:
     def default_model_spec(self):
         return self.model_specs[self.default_model]
 
-    @property
-    def input_name_list(self):
-        warnings.warn(
-            "input_name_list is deprecated, please use 'default_model_spec.input_name' instead", DeprecationWarning
-        )
-
-        return self.default_model_spec.input_name
-
     def __del__(self):
         # Not supporting streaming
         # if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
@@ -223,15 +214,14 @@ class InferenceClient:
         triton_client.is_server_ready()
         triton_client.is_model_ready(model_name, model_version)
 
-        (max_batch_size, input_name_list, output_name_list, dtype_list) = get_triton_client(
+        (max_batch_size, input_list, output_name_list) = get_triton_client(
             triton_client, model_name=model_name, model_version=model_version, protocol=self.flag.protocol
         )
 
         self.model_specs[(model_name, model_version)] = TritonModelSpec(
             name=model_name,
             max_batch_size=max_batch_size,
-            input_name=input_name_list,
-            input_dtype=dtype_list,
+            model_input=input_list,
             output_name=output_name_list,
         )
 
@@ -257,7 +247,12 @@ class InferenceClient:
         if type(sequences_or_dict) in [list, np.ndarray]:
             sequences_list = [sequences_or_dict]
         elif type(sequences_or_dict) is dict:
-            sequences_list = [sequences_or_dict[input_name] for input_name in model_spec.input_name]
+            sequences_list = [
+                sequences_or_dict[model_input.name]
+                for model_input in model_spec.model_input
+                if model_input.optional is False  # check required
+                or (model_input.optional is True and model_input.name in sequences_or_dict)  # check optional
+            ]
 
         return self._call_async(sequences_list, model_spec=model_spec)
 
@@ -267,8 +262,8 @@ class InferenceClient:
         else:
             client = httpclient
         infer_input_list = []
-        for _input, _input_name, _dtype in zip(_input_list, model_spec.input_name, model_spec.input_dtype):
-            infer_input = client.InferInput(_input_name, _input.shape, _dtype)
+        for _input, _model_input in zip(_input_list, model_spec.model_input):
+            infer_input = client.InferInput(_model_input.name, _input.shape, _model_input.dtype)
             infer_input.set_data_from_numpy(_input)
             infer_input_list.append(infer_input)
 

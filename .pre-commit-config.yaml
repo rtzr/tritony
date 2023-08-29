@@ -28,7 +28,7 @@ repos:
     hooks:
       - id: flake8
         types: [python]
-        args: ["--max-line-length", "120", "--ignore", "F811,F841,E203,E402,E712,W503"]
+        args: ["--max-line-length", "120", "--ignore", "F811,F841,E203,E402,E712,W503,E501"]
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.5
     hooks:
