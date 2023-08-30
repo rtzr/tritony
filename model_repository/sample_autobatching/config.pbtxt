@@ -1,6 +1,14 @@
 name: "sample_autobatching"
 backend: "python"
 max_batch_size: 2
+
+parameters [
+  {
+    key: "add",
+    value: { string_value: "0" }
+  }
+]
+
 input [
 {
     name: "model_in"
