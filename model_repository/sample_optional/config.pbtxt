@@ -1,11 +1,24 @@
-name: "sample"
+name: "sample_optional"
 backend: "python"
 max_batch_size: 0
+
+parameters [
+  {
+    key: "add",
+    value: { string_value: "0" }
+  }
+]
 
 input [
 {
     name: "model_in"
     data_type: TYPE_FP32
+    dims: [ -1 ]
+},
+{
+    name: "optional_model_sub"
+    data_type: TYPE_FP32
+    optional: true
     dims: [ -1 ]
 }
 ]

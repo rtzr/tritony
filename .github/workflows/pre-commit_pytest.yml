@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: pre-commit
     container:
-      image: nvcr.io/nvidia/tritonserver:23.03-pyt-python-py3
+      image: nvcr.io/nvidia/tritonserver:23.08-pyt-python-py3
       options:
         --shm-size=1g
     steps:

@@ -115,7 +115,11 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
         loop = asyncio.get_running_loop()
 
         if "parameters" in grpc_get_inference_request.__code__.co_varnames:
-            model_input["parameters"] = None
+            # check tritonclient[all]>=2.34.0, NGC 23.04
+            model_input["parameters"] = model_input.get("parameters", None)
+        else:
+            logger.warning("tritonclient[all]<2.34.0, NGC 21.04")
+            model_input.pop("parameters")
         request = grpc_get_inference_request(
             **model_input,
             priority=0,
