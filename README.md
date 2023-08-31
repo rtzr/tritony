@@ -80,14 +80,11 @@ if __name__ == "__main__":
 ### With Triton
 
 ```bash
-docker run --rm \
-    -v ${PWD}:/models \
-    nvcr.io/nvidia/tritonserver:22.01-pyt-python-py3 \
-    tritonserver --model-repo=/models
+./bin/run_triton_tritony_sample.sh
 ```
 
 ```bash
-pytest -m -s tests/test_tritony.py
+pytest -s --cov-report term-missing --cov=tritony tests/
 ```
 
 ### Example with image_client.py

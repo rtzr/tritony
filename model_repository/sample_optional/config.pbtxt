@@ -20,6 +20,12 @@ input [
     data_type: TYPE_FP32
     optional: true
     dims: [ -1 ]
+},
+{
+    name: "optional_model_string"
+    data_type: TYPE_STRING
+    optional: true
+    dims: [ -1 ]
 }
 ]
 

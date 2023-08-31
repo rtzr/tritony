@@ -25,10 +25,10 @@ def test_basics(protocol_and_port):
 
     sample = np.random.rand(1, 100).astype(np.float32)
     result = client(sample)
-    print(f"Result: {np.isclose(result, sample).all()}")
+    assert np.isclose(result, sample).all()
 
     result = client({"model_in": sample})
-    print(f"Dict Result: {np.isclose(result, sample).all()}")
+    assert np.isclose(result, sample).all()
 
 
 def test_batching(protocol_and_port):
@@ -40,7 +40,7 @@ def test_batching(protocol_and_port):
     sample = np.random.rand(100, 100).astype(np.float32)
     # client automatically makes sub batches with (50, 2, 100)
     result = client(sample)
-    print(f"Result: {np.isclose(result, sample).all()}")
+    assert np.isclose(result, sample).all()
 
 
 def test_exception(protocol_and_port):
