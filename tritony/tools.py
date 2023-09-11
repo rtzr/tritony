@@ -6,6 +6,7 @@ import itertools
 import logging
 import os
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Union
 
@@ -19,9 +20,8 @@ from tritonclient.grpc import InferResult
 try:
     from tritonclient.grpc import _get_inference_request as grpc_get_inference_request
 except ImportError:
-    logging.info("tritonclient[all]>=2.34.0")
+    warnings.warn(UserWarning("tritonclient[all]>=2.34.0"))
     from tritonclient.grpc._utils import _get_inference_request as grpc_get_inference_request
-
 
 from tritonclient.utils import InferenceServerException
 
@@ -117,8 +117,8 @@ async def request_async(protocol: TritonProtocol, model_input: Dict, triton_clie
         if "parameters" in grpc_get_inference_request.__code__.co_varnames:
             # check tritonclient[all]>=2.34.0, NGC 23.04
             model_input["parameters"] = model_input.get("parameters", None)
-        else:
-            logger.warning("tritonclient[all]<2.34.0, NGC 21.04")
+        elif "parameters" in model_input:
+            warnings.warn(UserWarning("tritonclient[all]<2.34.0, NGC 23.04"))
             model_input.pop("parameters")
         request = grpc_get_inference_request(
             **model_input,
