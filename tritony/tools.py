@@ -37,8 +37,8 @@ from tritony.helpers import (
 
 logger = logging.getLogger(__name__)
 
-TRITON_LOAD_DELAY = float(os.environ.get("TRITON_LOAD_DELAY", 3))
-TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 0.2))
+TRITON_LOAD_DELAY = float(os.environ.get("TRITON_LOAD_DELAY", 2))
+TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 2))
 TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
 TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 30))
 
@@ -93,21 +93,38 @@ async def send_request_async(
                 compression=inference_client.flag.compression_algorithm,
             )
         except InferenceServerException as triton_error:
-            handel_triton_error(triton_error)
+            handle_triton_error(triton_error)
+        except grpc.RpcError as grpc_error:
+            handle_grpc_error(grpc_error)
         ret.append((idx, a_pred))
         data_queue.task_done()
 
 
-def handel_triton_error(triton_error: InferenceServerException):
+def handle_triton_error(triton_error: InferenceServerException):
     """
     https://github.com/triton-inference-server/core/blob/0141e0651c4355bf8a9d1118aac45abda6569997/src/scheduler_utils.cc#L133
     ("Max_queue_size exceeded", "Server not ready", "failed to connect to all addresses")
     """
+    if triton_error.status() == "400" and "batch-size must be <=" in triton_error.message():
+        raise triton_error
     runtime_msg = f"{triton_error.status()} with {triton_error.message()}"
     raise RuntimeError(runtime_msg) from triton_error
 
 
-@retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_BACKOFF_COEFF, backoff=2)
+def handle_grpc_error(grpc_error: grpc.RpcError):
+    if grpc_error.code() == grpc.StatusCode.INVALID_ARGUMENT:
+        raise grpc_error
+    else:
+        runtime_msg = f"{grpc_error.code()} with {grpc_error.details()}"
+        raise RuntimeError(grpc_error.details()) from grpc_error
+
+
+@retry(
+    (InferenceServerException, grpc.RpcError),
+    tries=TRITON_RETRIES,
+    delay=TRITON_LOAD_DELAY,
+    backoff=TRITON_BACKOFF_COEFF,
+)
 async def request_async(protocol: TritonProtocol, model_input: Dict, triton_client, timeout: int, compression: str):
     st = time.time()
 
@@ -300,10 +317,28 @@ class InferenceClient:
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
     ) -> Optional[np.ndarray]:
-        async_result = asyncio.run(self._call_async_item(data=data, model_spec=model_spec, parameters=parameters))
+        for retry_idx in range(max(2, TRITON_RETRIES)):
+            async_result = asyncio.run(self._call_async_item(data=data, model_spec=model_spec, parameters=parameters))
 
-        if isinstance(async_result, Exception):
-            raise async_result
+            is_invalid_argument_grpc = (
+                self.flag.protocol is TritonProtocol.grpc
+                and isinstance(async_result, grpc.RpcError)
+                and async_result.code() == grpc.StatusCode.INVALID_ARGUMENT
+            )
+            is_invalid_argument_http = (
+                self.flag.protocol is TritonProtocol.http
+                and isinstance(async_result, InferenceServerException)
+                and async_result.status() == "400"
+            )
+
+            if is_invalid_argument_grpc or is_invalid_argument_http:
+                time.sleep(TRITON_LOAD_DELAY * TRITON_BACKOFF_COEFF**retry_idx)
+                self._renew_triton_client(self._triton_client)
+                model_spec = self.model_specs[(model_spec.name, model_spec.model_version)]
+                continue
+            elif isinstance(async_result, Exception):
+                raise async_result
+            break
 
         return async_result
 
