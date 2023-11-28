@@ -71,6 +71,16 @@ def test_with_optional(protocol_and_port):
     assert np.isclose(result[0], sample[0] - OPTIONAL_SUB_VALUE, rtol=EPSILON).all()
 
 
+def test_reload_model_spec(protocol_and_port):
+    client = get_client(*protocol_and_port, model_name="sample_autobatching")
+    # force to change max_batch_size
+    client.default_model_spec.max_batch_size = 4
+
+    sample = np.random.rand(8, 100).astype(np.float32)
+    result = client(sample)
+    assert np.isclose(result, sample).all()
+
+
 if __name__ == "__main__":
     test_with_parameters(("grpc", "8101"))
     test_with_optional(("grpc", "8101"))
