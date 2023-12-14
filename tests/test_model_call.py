@@ -6,21 +6,21 @@ import pytest
 from tritony import InferenceClient
 
 TRITON_HOST = os.environ.get("TRITON_HOST", "localhost")
-TRITON_HTTP = os.environ.get("TRITON_HTTP", "8000")
-TRITON_GRPC = os.environ.get("TRITON_GRPC", "8001")
+TRITON_HTTP = os.environ.get("TRITON_HTTP", "8100")
+TRITON_GRPC = os.environ.get("TRITON_GRPC", "8101")
 
 
 EPSILON = 1e-8
 
 
-@pytest.fixture(params=[("http", TRITON_HTTP), ("grpc", TRITON_GRPC)])
+@pytest.fixture(params=[("http", TRITON_HTTP, True), ("grpc", TRITON_GRPC, True), ("grpc", TRITON_GRPC, False)])
 def protocol_and_port(request):
     return request.param
 
 
-def get_client(protocol, port, model_name):
-    print(f"Testing {protocol}", flush=True)
-    return InferenceClient.create_with(model_name, f"{TRITON_HOST}:{port}", protocol=protocol)
+def get_client(protocol, port, run_async, model_name):
+    print(f"Testing {protocol} with run_async={run_async}", flush=True)
+    return InferenceClient.create_with(model_name, f"{TRITON_HOST}:{port}", protocol=protocol, run_async=run_async)
 
 
 def test_swithcing(protocol_and_port):
@@ -79,8 +79,3 @@ def test_reload_model_spec(protocol_and_port):
     sample = np.random.rand(8, 100).astype(np.float32)
     result = client(sample)
     assert np.isclose(result, sample).all()
-
-
-if __name__ == "__main__":
-    test_with_parameters(("grpc", "8101"))
-    test_with_optional(("grpc", "8101"))
