@@ -8,7 +8,7 @@ import os
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import grpc
 import numpy as np
@@ -45,7 +45,7 @@ TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 30))
 _executor = ThreadPoolExecutor(max_workers=ASYNC_TASKS)
 
 
-async def data_generator(data: List[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
+async def data_generator(data: list[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
     """
     batch data generator
 
@@ -67,10 +67,10 @@ async def data_generator(data: List[np.ndarray], batch_size: int, queue: asyncio
 
 
 async def send_request_async(
-    inference_client,
+    inference_client: InferenceClient,
     data_queue,
     done_event,
-    triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient],
+    triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient,
     model_spec: TritonModelSpec,
     parameters: dict | None = None,
 ):
@@ -119,13 +119,51 @@ def handle_grpc_error(grpc_error: grpc.RpcError):
         raise RuntimeError(grpc_error.details()) from grpc_error
 
 
+def request(
+    protocol: TritonProtocol,
+    model_input: dict,
+    triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient,
+    timeout: int,
+    compression: str,
+):
+    st = time.time()
+
+    if protocol == TritonProtocol.grpc:
+        if "parameters" in grpc_get_inference_request.__code__.co_varnames:
+            # check tritonclient[all]>=2.34.0, NGC 23.04
+            model_input["parameters"] = model_input.get("parameters", None)
+        elif "parameters" in model_input:
+            warnings.warn(UserWarning("tritonclient[all]<2.34.0, NGC 23.04"))
+            model_input.pop("parameters")
+        request = grpc_get_inference_request(
+            **model_input,
+            priority=0,
+            timeout=timeout,
+            sequence_id=0,
+            sequence_start=False,
+            sequence_end=False,
+        )
+        ModelInferResponse = triton_client._client_stub.ModelInfer(
+            request=request, timeout=timeout, compression=COMPRESSION_ALGORITHM_MAP[compression]
+        )
+        result = InferResult(ModelInferResponse)
+    else:
+        # TODO: implement http client more efficiently
+        raise NotImplementedError("Not implemented for httpclient yet")
+
+    ed = time.time()
+    logger.debug(f"{model_input['model_name']} {model_input['inputs'][0].shape()} elapsed: {ed - st:.3f}")
+
+    return [result.as_numpy(outputs.name()) for outputs in model_input["outputs"]]
+
+
 @retry(
     (InferenceServerException, grpc.RpcError),
     tries=TRITON_RETRIES,
     delay=TRITON_LOAD_DELAY,
     backoff=TRITON_BACKOFF_COEFF,
 )
-async def request_async(protocol: TritonProtocol, model_input: Dict, triton_client, timeout: int, compression: str):
+async def request_async(protocol: TritonProtocol, model_input: dict, triton_client, timeout: int, compression: str):
     st = time.time()
 
     if protocol == TritonProtocol.grpc:
@@ -175,7 +213,7 @@ class InferenceClient:
         run_async: bool = True,
         concurrency: int = ASYNC_TASKS,
         secure: bool = False,
-        compression_algorithm: Optional[str] = None,
+        compression_algorithm: str | None = None,
     ):
         return cls(
             TritonClientFlag(
@@ -253,7 +291,7 @@ class InferenceClient:
 
     def __call__(
         self,
-        sequences_or_dict: Union[List[Any], Dict[str, List[Any]]],
+        sequences_or_dict: list[np.ndarray] | dict[str, list[Any]] | np.ndarray,
         parameters: dict | None = None,
         model_name: str | None = None,
         model_version: str | None = None,
@@ -277,11 +315,14 @@ class InferenceClient:
                 or (model_input.optional is True and model_input.name in sequences_or_dict)  # check optional
             ]
 
-        return self._call_async(sequences_list, model_spec=model_spec, parameters=parameters)
+        if self.is_async:
+            return self._call_async(sequences_list, model_spec=model_spec, parameters=parameters)
+        else:
+            return self._call_request(sequences_list, model_spec=model_spec, parameters=parameters)
 
     def build_triton_input(
         self,
-        _input_list: List[np.array],
+        _input_list: list[np.ndarray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
     ):
@@ -313,10 +354,10 @@ class InferenceClient:
 
     def _call_async(
         self,
-        data: List[np.ndarray],
+        data: list[np.ndarray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         for retry_idx in range(max(2, TRITON_RETRIES)):
             async_result = asyncio.run(self._call_async_item(data=data, model_spec=model_spec, parameters=parameters))
 
@@ -344,7 +385,7 @@ class InferenceClient:
 
     async def _call_async_item(
         self,
-        data: List[np.ndarray],
+        data: list[np.ndarray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
     ):
@@ -408,3 +449,51 @@ class InferenceClient:
             return e
         finally:
             del current_grpc_async_tasks
+
+    def _call_request(
+        self,
+        data: list[np.ndarray],
+        model_spec: TritonModelSpec,
+        parameters: dict | None = None,
+    ) -> list[np.ndarray]:
+        for retry_idx in range(max(2, TRITON_RETRIES)):
+            try:
+                if model_spec.max_batch_size == 0:
+                    batch_iterable = zip(*data)
+                else:
+                    split_indices = np.arange(model_spec.max_batch_size, data[0].shape[0], model_spec.max_batch_size)
+                    batch_iterable = zip(*[np.array_split(elem, split_indices) for elem in data])
+
+                result_by_req_id = []
+                for inputs_list in batch_iterable:
+                    result_by_req_id.append(
+                        request(
+                            TritonProtocol(self.flag.protocol),
+                            self.build_triton_input(inputs_list, model_spec=model_spec, parameters=parameters),
+                            self.triton_client,
+                            timeout=self.client_timeout,
+                            compression=str(self.flag.compression_algorithm),
+                        )
+                    )
+
+                if model_spec.max_batch_size == 0:
+                    result_by_output_name = list(zip(*result_by_req_id))
+                else:
+                    result_by_output_name = list(map(lambda ll: np.concatenate(ll, axis=0), zip(*result_by_req_id)))
+
+                if len(result_by_output_name) == 1:
+                    result_by_output_name = result_by_output_name[0]
+
+            except Exception as e:
+                result_by_output_name = e
+                if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                    time.sleep(TRITON_LOAD_DELAY * TRITON_BACKOFF_COEFF**retry_idx)
+                    self._renew_triton_client(self._triton_client)
+                    model_spec = self.model_specs[(model_spec.name, model_spec.model_version)]
+                    continue
+                else:
+                    raise e
+
+            break
+
+        return result_by_output_name
