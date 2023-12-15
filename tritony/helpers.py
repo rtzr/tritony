@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, Optional, Union
+from typing import Any
 
 import attrs
 from attrs import define
@@ -18,7 +18,7 @@ class TritonProtocol(Enum):
     http = "http"
 
 
-COMPRESSION_ALGORITHM_MAP = defaultdict(int)
+COMPRESSION_ALGORITHM_MAP: dict[str, int] = defaultdict(int)
 COMPRESSION_ALGORITHM_MAP.update({"deflate": 1, "gzip": 2})
 
 
@@ -83,13 +83,13 @@ class TritonClientFlag:
     concurrency: int = 6  # only for TritonProtocol.http client
     verbose: bool = False
     input_dims: int = 1
-    compression_algorithm: Optional[str] = None
+    compression_algorithm: str | None = None
     ssl: bool = False
 
 
 def init_triton_client(
     flag: TritonClientFlag,
-) -> Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient]:
+) -> grpcclient.InferenceServerClient | httpclient.InferenceServerClient:
     assert not (
         flag.streaming and not (flag.protocol is TritonProtocol.grpc)
     ), "Streaming is only allowed with gRPC protocol"
@@ -107,7 +107,7 @@ def init_triton_client(
 
 
 def get_triton_client(
-    triton_client: Union[grpcclient.InferenceServerClient, httpclient.InferenceServerClient],
+    triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient,
     model_name: str,
     model_version: str,
     protocol: TritonProtocol,
