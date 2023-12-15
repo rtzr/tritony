@@ -40,6 +40,7 @@ jobs:
       image: nvcr.io/nvidia/tritonserver:23.08-pyt-python-py3
       options:
         --shm-size=1g
+        --user=root
     steps:
       - uses: actions/checkout@v3
       - name: test bash
