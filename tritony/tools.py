@@ -75,7 +75,7 @@ def safe_concatenate(arrays, axis=0):
         )
         for arr in arrays
     ]
-    return np.concatenate(arrays, axis=axis) if arrays else np.array([])
+    return np.concatenate(arrays, axis=axis)
 
 
 async def send_request_async(
