@@ -493,9 +493,7 @@ class InferenceClient:
                 if model_spec.max_batch_size == 0:
                     result_by_output_name = zipped_result
                 else:
-                    result_by_output_name = list(
-                        map(lambda ll: safe_concatenate(ll, axis=0), zipped_result)
-                    )
+                    result_by_output_name = list(map(lambda ll: safe_concatenate(ll, axis=0), zipped_result))
 
                 if len(result_by_output_name) == 1:
                     result_by_output_name = result_by_output_name[0]
