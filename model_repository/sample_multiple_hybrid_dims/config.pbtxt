@@ -1,0 +1,63 @@
+name: "sample_multiple_hybrid_dims"
+backend: "python"
+max_batch_size: 2
+
+parameters [
+  {
+    key: "add",
+    value: { string_value: "0" }
+  }
+]
+
+input [
+{
+    name: "model_in0"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+},
+{
+    name: "model_in1"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+}
+]
+
+output [
+{
+    name: "model_out0"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+},
+{
+    name: "model_out1"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+},
+{
+    name: "model_out2"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+}
+]
+
+instance_group [{ kind: KIND_CPU, count: 1 }]
+
+model_warmup {
+  name: "RandomSampleInput"
+  batch_size: 1
+  inputs [{
+      key: "model_in0"
+      value: {
+        data_type: TYPE_FP32
+        dims: [ 10 ]
+        random_data: true
+      }
+   }, {
+      key: "model_in1"
+      value: {
+        data_type: TYPE_FP32
+        dims: [ 10 ]
+        zero_data: true
+      }
+   }]
+}

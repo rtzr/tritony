@@ -17,7 +17,7 @@ class TritonPythonModel:
         responses = [None for _ in requests]
         for idx, request in enumerate(requests):
             current_add_value = int(json.loads(request.parameters()).get("add", 0))
-            in_tensor = [item.as_numpy() + current_add_value for item in request.inputs() if item.name() == "model_in"]
+            in_tensor = [item.as_numpy() + current_add_value for item in request.inputs() if "model_in" in item.name()]
             out_tensor = [
                 pb_utils.Tensor(output_name, x.astype(output_dtype))
                 for x, output_name, output_dtype in zip(in_tensor, self.output_name_list, self.output_dtype_list)

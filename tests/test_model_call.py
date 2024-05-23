@@ -69,3 +69,22 @@ def test_reload_model_spec(config):
     sample = np.random.rand(8, 100).astype(np.float32)
     result = client(sample)
     assert np.isclose(result, sample).all()
+
+
+def test_with_multiple_hybrid_dims(config):
+    client = get_client(*config, model_name="sample_multiple_hybrid_dims")
+
+    samples = [np.random.rand(1, 100).astype(np.float32) for _ in range(2)]
+    ADD_VALUE = 1
+    result = client(
+        {
+            client.default_model_spec.model_input[0].name: samples[0],
+            client.default_model_spec.model_input[1].name: samples[1],
+        },
+        parameters={"add": f"{ADD_VALUE}"},
+    )
+
+    assert np.isclose(result[0], samples[0][0] + ADD_VALUE).all()
+    assert np.isclose(result[1], samples[1][0] + ADD_VALUE).all()
+
+    assert np.isclose(result[2], ADD_VALUE).all()
