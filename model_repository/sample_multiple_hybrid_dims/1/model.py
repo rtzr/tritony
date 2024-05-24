@@ -24,13 +24,15 @@ class TritonPythonModel:
                 pb_utils.Tensor(output_name, x.astype(output_dtype))
                 for x, output_name, output_dtype in zip(in_tensor, self.output_name_list, self.output_dtype_list)
             ]
-            inference_response = pb_utils.InferenceResponse(output_tensors=out_tensor)
+
             out_tensor.append(
                 pb_utils.Tensor(
                     "model_out2",
-                    np.array([current_add_value], dtype=self.output_dtype_list[1]),
+                    np.array([current_add_value], dtype=self.output_dtype_list[2]),
                 )
             )
+
+            inference_response = pb_utils.InferenceResponse(output_tensors=out_tensor)
 
             responses[idx] = inference_response
         return responses

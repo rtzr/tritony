@@ -87,4 +87,4 @@ def test_with_multiple_hybrid_dims(config):
     assert np.isclose(result[0], samples[0][0] + ADD_VALUE).all()
     assert np.isclose(result[1], samples[1][0] + ADD_VALUE).all()
 
-    assert result[2][0] == ADD_VALUE
+    assert result[2] == ADD_VALUE
