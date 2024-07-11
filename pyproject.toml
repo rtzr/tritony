@@ -4,3 +4,17 @@ requires = [
     "wheel >= 0.29.0",
 ]
 build-backend = 'setuptools.build_meta'
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+ignore = ["F811","F841","E203","E402","E501","E712","B019"]
+
+[tool.lint.isort]
+forced-separate = ["tests"]

@@ -55,6 +55,7 @@ if __name__ == "__main__":
 
 ## Release Notes
 
+- 24.07.11 Upgrade minimum tritonclient version to 2.34.0
 - 23.08.30 Support `optional` with model input, `parameters` on config.pbtxt
 - 23.06.16 Support tritonclient>=2.34.0
 - Loosely modified the requirements related to tritonclient
