@@ -91,7 +91,7 @@ def init_triton_client(
     flag: TritonClientFlag,
 ) -> grpcclient.InferenceServerClient | httpclient.InferenceServerClient:
     assert not (
-        flag.streaming and not (flag.protocol is TritonProtocol.grpc)
+        flag.streaming and flag.protocol is not TritonProtocol.grpc
     ), "Streaming is only allowed with gRPC protocol"
 
     if flag.protocol is TritonProtocol.grpc:
