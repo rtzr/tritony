@@ -1,0 +1,40 @@
+backend: "python"
+max_batch_size: 0
+
+input [
+{
+    name: "model_in"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+}
+]
+
+output [
+{
+    name: "model_out"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+}
+]
+
+instance_group [{ kind: KIND_CPU, count: 10 }]
+
+model_warmup {
+  name: "RandomSampleInput"
+  batch_size: 1
+  inputs [{
+      key: "model_in"
+      value: {
+        data_type: TYPE_FP32
+        dims: [ 10 ]
+        random_data: true
+      }
+   }, {
+      key: "model_in"
+      value: {
+        data_type: TYPE_FP32
+        dims: [ 10 ]
+        zero_data: true
+      }
+   }]
+}

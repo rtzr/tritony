@@ -10,7 +10,10 @@ import attrs
 from attrs import define
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
+from tritonclient.grpc import aio as aio_grpcclient
 from tritonclient.grpc import model_config_pb2
+from tritonclient.grpc.aio import model_config_pb2
+from tritonclient.http import aio as aio_httpclient
 
 
 class TritonProtocol(Enum):
@@ -77,7 +80,7 @@ class TritonClientFlag:
     url: str
     model_name: str
     model_version: str = "1"
-    protocol: TritonProtocol | str = attrs.field(converter=TritonProtocol, default=TritonProtocol.grpc)
+    protocol: TritonProtocol = attrs.field(converter=TritonProtocol, default=TritonProtocol.grpc)
     streaming: bool = False  # TODO: not implemented
     async_set: bool = True  # TODO: not totally implemented
     concurrency: int = 6  # only for TritonProtocol.http client
@@ -86,22 +89,37 @@ class TritonClientFlag:
     compression_algorithm: str | None = None
     ssl: bool = False
 
+    use_aio_tritonclient: bool = False
+
 
 def init_triton_client(
     flag: TritonClientFlag,
-) -> grpcclient.InferenceServerClient | httpclient.InferenceServerClient:
+) -> (
+    grpcclient.InferenceServerClient
+    | httpclient.InferenceServerClient
+    | aio_grpcclient.InferenceServerClient
+    | aio_httpclient.InferenceServerClient
+):
     assert not (
         flag.streaming and flag.protocol is not TritonProtocol.grpc
     ), "Streaming is only allowed with gRPC protocol"
 
-    if flag.protocol is TritonProtocol.grpc:
-        # Create gRPC client for communicating with the server
-        triton_client = grpcclient.InferenceServerClient(url=flag.url, verbose=flag.verbose, ssl=flag.ssl)
+    if not flag.use_aio_tritonclient:
+        if flag.protocol is TritonProtocol.grpc:
+            # Create gRPC client for communicating with the server
+            triton_client = grpcclient.InferenceServerClient(url=flag.url, verbose=flag.verbose, ssl=flag.ssl)
+        else:
+            # Specify large enough concurrency to handle the
+            # the number of requests.
+            concurrency = flag.concurrency if flag.async_set else 1
+            triton_client = httpclient.InferenceServerClient(
+                url=flag.url, verbose=flag.verbose, concurrency=concurrency
+            )
     else:
-        # Specify large enough concurrency to handle the
-        # the number of requests.
-        concurrency = flag.concurrency if flag.async_set else 1
-        triton_client = httpclient.InferenceServerClient(url=flag.url, verbose=flag.verbose, concurrency=concurrency)
+        if flag.protocol is TritonProtocol.grpc:
+            triton_client = aio_grpcclient.InferenceServerClient(url=flag.url, verbose=flag.verbose, ssl=flag.ssl)
+        else:
+            triton_client = aio_httpclient.InferenceServerClient(url=flag.url, verbose=flag.verbose)
 
     return triton_client
 
@@ -111,7 +129,7 @@ def get_triton_client(
     model_name: str,
     model_version: str,
     protocol: TritonProtocol,
-) -> (int, list[TritonModelInput], list[str]):
+) -> tuple[int, list[TritonModelInput], list[str]]:
     """
     (required in)
     :param triton_client:
@@ -128,6 +146,25 @@ def get_triton_client(
     args = dict(model_name=model_name, model_version=model_version)
 
     model_config = triton_client.get_model_config(**args)
+    if protocol is TritonProtocol.http:
+        model_config = dict_to_attr(model_config)
+    elif protocol is TritonProtocol.grpc:
+        model_config = model_config.config
+
+    max_batch_size, input_list, output_name_list = parse_model(model_config)
+
+    return max_batch_size, input_list, output_name_list
+
+
+async def async_get_triton_client(
+    triton_client: aio_grpcclient.InferenceServerClient | aio_httpclient.InferenceServerClient,
+    model_name: str,
+    model_version: str,
+    protocol: TritonProtocol,
+) -> tuple[int, list[TritonModelInput], list[str]]:
+    args = dict(model_name=model_name, model_version=model_version)
+
+    model_config = await triton_client.get_model_config(**args)
     if protocol is TritonProtocol.http:
         model_config = dict_to_attr(model_config)
     elif protocol is TritonProtocol.grpc:
@@ -161,7 +198,7 @@ def parse_model_input(
 
 def parse_model(
     model_config: model_config_pb2.ModelConfig | SimpleNamespace,
-) -> (int, list[TritonModelInput], list[str]):
+) -> tuple[int, list[TritonModelInput], list[str]]:
     return (
         model_config.max_batch_size,
         [parse_model_input(model_config_input) for model_config_input in model_config.input],

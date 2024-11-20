@@ -11,7 +11,7 @@ docker run -it --rm --name triton_tritony \
     -e OMP_NUM_THREADS=2 \
     -e OPENBLAS_NUM_THREADS=2 \
     --shm-size=1g  \
-    nvcr.io/nvidia/tritonserver:23.08-pyt-python-py3 \
+    nvcr.io/nvidia/tritonserver:24.05-pyt-python-py3 \
     tritonserver --model-repository=/models \
     --exit-timeout-secs 15 \
     --min-supported-compute-capability 7.0 \
