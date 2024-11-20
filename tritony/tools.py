@@ -456,7 +456,7 @@ class InferenceClient:
 
         return request_input
 
-    async def call_async(
+    async def aio_infer(
         self,
         sequences_or_dict: list[np.ndarray] | dict[str, list[Any]] | np.ndarray,
         parameters: dict | None = None,
@@ -475,9 +475,9 @@ class InferenceClient:
                 or (model_input.optional is True and model_input.name in sequences_or_dict)  # check optional
             ]
 
-        return await self.infer_async(sequences_list, model_spec=model_spec, parameters=parameters)
+        return await self._aio_infer(sequences_list, model_spec=model_spec, parameters=parameters)
 
-    async def aio_infer(
+    async def _aio_infer(
         self,
         data: list[np.ndarray],
         model_spec: TritonModelSpec | None = None,

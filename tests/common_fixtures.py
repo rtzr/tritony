@@ -1,6 +1,14 @@
+import logging
 import os
 
 import pytest
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+    datefmt="%m/%d/%Y %H:%M:%S",
+)
+
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "sample")
 TRITON_HOST = os.environ.get("TRITON_HOST", "localhost")
