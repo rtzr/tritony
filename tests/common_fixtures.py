@@ -14,3 +14,11 @@ def config(request):
     Returns a tuple of (protocol, port, run_async)
     """
     return request.param
+
+
+@pytest.fixture(params=[("http", TRITON_HTTP), ("grpc", TRITON_GRPC)])
+def async_config(request):
+    """
+    Returns a tuple of (protocol, port)
+    """
+    return request.param

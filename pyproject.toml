@@ -18,3 +18,6 @@ ignore = ["F811","F841","E203","E402","E501","E712","B019"]
 
 [tool.lint.isort]
 forced-separate = ["tests"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"

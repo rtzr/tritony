@@ -16,7 +16,9 @@ from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
 from tritonclient.grpc import InferResult
+from tritonclient.grpc import aio as aio_grpcclient
 from tritonclient.grpc._utils import _get_inference_request as grpc_get_inference_request
+from tritonclient.http import aio as aio_httpclient
 from tritonclient.utils import InferenceServerException
 
 from tritony import ASYNC_TASKS
@@ -25,6 +27,7 @@ from tritony.helpers import (
     TritonClientFlag,
     TritonModelSpec,
     TritonProtocol,
+    async_get_triton_client,
     get_triton_client,
     init_triton_client,
 )
@@ -70,14 +73,23 @@ async def send_request_async(
 ):
     ret = []
     while True:
-        data = asyncio.create_task(data_queue.get())
-        done = asyncio.create_task(done_event.wait())
-        d, _ = await asyncio.wait({data, done}, return_when=asyncio.FIRST_COMPLETED)
+        data = asyncio.create_task(data_queue.get(), name="tritony.data_queue.get")
+        done = asyncio.create_task(done_event.wait(), name="tritony.done_event.wait")
+        d, pending = await asyncio.wait({data, done}, return_when=asyncio.FIRST_COMPLETED)
+
+        # Cancel pending task
+        for p in pending:
+            p.cancel()
+
         idx, batch_data = None, None
         if data in d:
-            idx, batch_data = data.result()
+            try:
+                idx, batch_data = data.result()
+            except asyncio.CancelledError:
+                continue
         elif done in d:
             return ret
+
         try:
             a_pred = await request_async(
                 inference_client.flag.protocol,
@@ -85,13 +97,15 @@ async def send_request_async(
                 triton_client,
                 timeout=inference_client.client_timeout,
                 compression=inference_client.flag.compression_algorithm,
+                use_aio_tritonclient=inference_client.flag.use_aio_tritonclient,
             )
+            ret.append((idx, a_pred))
         except InferenceServerException as triton_error:
             handle_triton_error(triton_error)
         except grpc.RpcError as grpc_error:
             handle_grpc_error(grpc_error)
-        ret.append((idx, a_pred))
-        data_queue.task_done()
+        finally:
+            data_queue.task_done()
 
 
 def handle_triton_error(triton_error: InferenceServerException):
@@ -157,10 +171,17 @@ def request(
     delay=TRITON_LOAD_DELAY,
     backoff=TRITON_BACKOFF_COEFF,
 )
-async def request_async(protocol: TritonProtocol, model_input: dict, triton_client, timeout: int, compression: str):
+async def request_async(
+    protocol: TritonProtocol,
+    model_input: dict,
+    triton_client,
+    timeout: int,
+    compression: str,
+    use_aio_tritonclient: bool,
+):
     st = time.time()
 
-    if protocol == TritonProtocol.grpc:
+    if protocol == TritonProtocol.grpc and not use_aio_tritonclient:
         loop = asyncio.get_running_loop()
 
         if "parameters" in grpc_get_inference_request.__code__.co_varnames:
@@ -185,9 +206,15 @@ async def request_async(protocol: TritonProtocol, model_input: dict, triton_clie
         )
         ModelInferResponse = await loop.run_in_executor(_executor, func_partial)
         result = InferResult(ModelInferResponse)
-    else:
+    elif protocol == TritonProtocol.http and not use_aio_tritonclient:
         # TODO: implement http client more efficiently
         result = triton_client.async_infer(**model_input, timeout=timeout).get_result()
+    elif protocol == TritonProtocol.grpc and use_aio_tritonclient:
+        result = await triton_client.infer(**model_input)
+    elif protocol == TritonProtocol.http and use_aio_tritonclient:
+        result = await triton_client.infer(**model_input)
+    else:
+        raise RuntimeError("Not Reachable")
 
     ed = time.time()
     logger.debug(f"{model_input['model_name']} {model_input['inputs'][0].shape()} elapsed: {ed - st:.3f}")
@@ -223,32 +250,72 @@ class InferenceClient:
             )
         )
 
+    @classmethod
+    def create_with_asyncio(
+        cls,
+        model: str,
+        url: str,
+        input_dims: int = 2,
+        model_version: str = "1",
+        protocol: str = "grpc",
+        run_async: bool = True,
+        concurrency: int = ASYNC_TASKS,
+        secure: bool = False,
+        compression_algorithm: str | None = None,
+    ):
+        return cls(
+            TritonClientFlag(
+                url=url,
+                model_name=model,
+                model_version=model_version,
+                protocol=protocol,
+                async_set=run_async,
+                concurrency=concurrency,
+                input_dims=input_dims,
+                compression_algorithm=compression_algorithm,
+                ssl=secure,
+                use_aio_tritonclient=True,
+            )
+        )
+
     def __init__(self, flag: TritonClientFlag):
         self.__version__ = 1
 
         self.flag = flag
         self.default_model = (flag.model_name, flag.model_version)
-        self.model_specs = {}
+        self.model_specs: dict[tuple[str, str], TritonModelSpec] = {}
         self.is_async = self.flag.async_set
         self.client_timeout = TRITON_CLIENT_TIMEOUT
         self._triton_client = None
-        self.triton_client
+        self.init_triton_client()
 
-        self.output_kwargs = {}
         self.sent_count = 0
         self.processed_count = 0
 
+    def init_triton_client(self):
+        if not self.flag.use_aio_tritonclient:
+            self._triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient = (
+                init_triton_client(self.flag)
+            )
+        else:
+            self._triton_client: aio_grpcclient.InferenceServerClient | aio_httpclient.InferenceServerClient = (
+                init_triton_client(self.flag)
+            )
+
     @property
     def triton_client(self):
-        if self.flag.protocol is TritonProtocol.grpc:
-            self._triton_client: grpcclient.InferenceServerClient = init_triton_client(self.flag)
-        else:
-            self._triton_client: httpclient.InferenceServerClient = init_triton_client(self.flag)
-        self._renew_triton_client(self._triton_client)
         return self._triton_client
 
     @property
     def default_model_spec(self):
+        if len(self.model_specs.keys()) == 0:
+            self._renew_triton_client(self._triton_client)
+        return self.model_specs[self.default_model]
+
+    @property
+    async def async_default_model_spec(self):
+        if len(self.model_specs.keys()) == 0:
+            await self._async_renew_triton_client(self._triton_client)
         return self.model_specs[self.default_model]
 
     def __del__(self):
@@ -258,7 +325,12 @@ class InferenceClient:
         pass
 
     @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
-    def _renew_triton_client(self, triton_client, model_name: str | None = None, model_version: str | None = None):
+    def _renew_triton_client(
+        self,
+        triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ):
         if not model_name:
             model_name = self.flag.model_name
         if not model_version:
@@ -279,9 +351,56 @@ class InferenceClient:
             output_name=output_name_list,
         )
 
+    @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
+    async def _async_renew_triton_client(
+        self,
+        triton_client: aio_grpcclient.InferenceServerClient | aio_httpclient.InferenceServerClient,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ):
+        if not model_name:
+            model_name = self.flag.model_name
+        if not model_version:
+            model_version = self.flag.model_version
+
+        await triton_client.is_server_live()
+        await triton_client.is_server_ready()
+        await triton_client.is_model_ready(model_name, model_version)
+
+        (max_batch_size, input_list, output_name_list) = await async_get_triton_client(
+            triton_client, model_name=model_name, model_version=model_version, protocol=self.flag.protocol
+        )
+
+        self.model_specs[(model_name, model_version)] = TritonModelSpec(
+            name=model_name,
+            max_batch_size=max_batch_size,
+            model_input=input_list,
+            output_name=output_name_list,
+        )
+
     def _get_request_id(self):
         self.sent_count += 1
         return self.sent_count
+
+    def get_model_spec(self, model_name: str | None, model_version: str | None) -> TritonModelSpec:
+        if model_name is None:
+            model_name = self.flag.model_name
+        if model_version is None:
+            model_version = self.flag.model_version
+        if (model_name, model_version) not in self.model_specs:
+            self._renew_triton_client(self.triton_client, model_name, model_version)
+
+        return self.model_specs[(model_name, model_version)]
+
+    async def async_get_model_spec(self, model_name: str | None, model_version: str | None) -> TritonModelSpec:
+        if model_name is None:
+            model_name = self.flag.model_name
+        if model_version is None:
+            model_version = self.flag.model_version
+        if (model_name, model_version) not in self.model_specs:
+            await self._async_renew_triton_client(self.triton_client, model_name, model_version)
+
+        return self.model_specs[(model_name, model_version)]
 
     def __call__(
         self,
@@ -290,14 +409,7 @@ class InferenceClient:
         model_name: str | None = None,
         model_version: str | None = None,
     ):
-        if model_name is None:
-            model_name = self.flag.model_name
-        if model_version is None:
-            model_version = self.flag.model_version
-        if (model_name, model_version) not in self.model_specs:
-            self._renew_triton_client(self.triton_client, model_name, model_version)
-
-        model_spec = self.model_specs[(model_name, model_version)]
+        model_spec = self.get_model_spec(model_name, model_version)
 
         if type(sequences_or_dict) in [list, np.ndarray]:
             sequences_list = [sequences_or_dict]
@@ -330,9 +442,7 @@ class InferenceClient:
             infer_input.set_data_from_numpy(_input)
             infer_input_list.append(infer_input)
 
-        infer_requested_output = [
-            client.InferRequestedOutput(output_name, **self.output_kwargs) for output_name in model_spec.output_name
-        ]
+        infer_requested_output = [client.InferRequestedOutput(output_name) for output_name in model_spec.output_name]
 
         request_id = self._get_request_id()
         request_input = dict(
@@ -345,6 +455,58 @@ class InferenceClient:
         )
 
         return request_input
+
+    async def call_async(
+        self,
+        sequences_or_dict: list[np.ndarray] | dict[str, list[Any]] | np.ndarray,
+        parameters: dict | None = None,
+        model_name: str | None = None,
+        model_version: str | None = None,
+    ):
+        model_spec = await self.async_get_model_spec(model_name, model_version)
+
+        if type(sequences_or_dict) in [list, np.ndarray]:
+            sequences_list = [sequences_or_dict]
+        elif type(sequences_or_dict) is dict:
+            sequences_list = [
+                sequences_or_dict[model_input.name]
+                for model_input in model_spec.model_input
+                if model_input.optional is False  # check required
+                or (model_input.optional is True and model_input.name in sequences_or_dict)  # check optional
+            ]
+
+        return await self.infer_async(sequences_list, model_spec=model_spec, parameters=parameters)
+
+    async def aio_infer(
+        self,
+        data: list[np.ndarray],
+        model_spec: TritonModelSpec | None = None,
+        parameters: dict | None = None,
+    ) -> np.ndarray | None:
+        for retry_idx in range(max(2, TRITON_RETRIES)):
+            async_result = await self._call_async_item(data=data, model_spec=model_spec, parameters=parameters)
+
+            is_invalid_argument_grpc = (
+                self.flag.protocol is TritonProtocol.grpc
+                and isinstance(async_result, grpc.RpcError)
+                and async_result.code() == grpc.StatusCode.INVALID_ARGUMENT
+            )
+            is_invalid_argument_http = (
+                self.flag.protocol is TritonProtocol.http
+                and isinstance(async_result, InferenceServerException)
+                and async_result.status() == "400"
+            )
+
+            if is_invalid_argument_grpc or is_invalid_argument_http:
+                await asyncio.sleep(TRITON_LOAD_DELAY * TRITON_BACKOFF_COEFF**retry_idx)
+                self._renew_triton_client(self._triton_client)
+                model_spec = self.model_specs[(model_spec.name, model_spec.model_version)]
+                continue
+            elif isinstance(async_result, Exception):
+                raise async_result
+            break
+
+        return async_result
 
     def _call_async(
         self,
@@ -389,12 +551,15 @@ class InferenceClient:
             data_queue = asyncio.Queue(maxsize=ASYNC_TASKS)
             done_event = asyncio.Event()
 
-            generator = asyncio.create_task(data_generator(data, model_spec.max_batch_size, data_queue, done_event))
+            generator = asyncio.create_task(
+                data_generator(data, model_spec.max_batch_size, data_queue, done_event), name="tritony.data_generator"
+            )
             current_grpc_async_tasks.append(generator)
 
             predict_tasks = [
                 asyncio.create_task(
-                    send_request_async(self, data_queue, done_event, self.triton_client, model_spec, parameters)
+                    send_request_async(self, data_queue, done_event, self.triton_client, model_spec, parameters),
+                    name="tritony.send_request_async",
                 )
                 for idx in range(ASYNC_TASKS)
             ]
