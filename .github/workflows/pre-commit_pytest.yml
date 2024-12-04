@@ -52,7 +52,8 @@ jobs:
           TRITON_CLIENT_TIMEOUT: 1
         run: |
           tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
-          pip install .[tests]
+          pip install uv
+          uv pip install .[tests]
           sleep 3
 
           curl -v ${TRITON_HOST}:${TRITON_HTTP}/v2/health/ready
