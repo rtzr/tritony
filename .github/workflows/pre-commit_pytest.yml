@@ -42,7 +42,8 @@ jobs:
         --shm-size=1g
         --user=root
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - name: test bash
         env:
           TRITON_HOST: localhost
@@ -50,9 +51,9 @@ jobs:
           TRITON_GRPC: 8001
           TRITON_RETRIES: 2
           TRITON_CLIENT_TIMEOUT: 1
+          UV_SYSTEM_PYTHON: 1
         run: |
           tritonserver --model-repo=$GITHUB_WORKSPACE/model_repository &
-          pip install uv
           uv pip install .[tests]
           sleep 3
 

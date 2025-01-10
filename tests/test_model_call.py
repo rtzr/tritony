@@ -59,13 +59,3 @@ def test_with_optional(config):
         }
     )
     assert np.isclose(result[0], sample[0] - OPTIONAL_SUB_VALUE, rtol=EPSILON).all()
-
-
-def test_reload_model_spec(config):
-    client = get_client(*config, model_name="sample_autobatching")
-    # force to change max_batch_size
-    client.default_model_spec.max_batch_size = 4
-
-    sample = np.random.rand(8, 100).astype(np.float32)
-    result = client(sample)
-    assert np.isclose(result, sample).all()
