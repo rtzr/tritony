@@ -318,11 +318,18 @@ class InferenceClient:
             await self._async_renew_triton_client(self._triton_client)
         return self.model_specs[self.default_model]
 
+    async def async_close(self):
+        await self._triton_client.close()
+
     def __del__(self):
-        # Not supporting streaming
-        # if self.flag.protocol is TritonProtocol.grpc and self.flag.streaming and hasattr(self, "triton_client"):
-        #     self.triton_client.stop_stream()
-        pass
+        try:
+            if asyncio.iscoroutinefunction(self._triton_client.close):
+                if not asyncio.get_event_loop().is_closed():
+                    asyncio.create_task(self._triton_client.close())
+            else:
+                self.close()
+        except Exception:
+            pass
 
     @retry((InferenceServerException, grpc.RpcError), tries=TRITON_RETRIES, delay=TRITON_LOAD_DELAY, backoff=2)
     def _renew_triton_client(
