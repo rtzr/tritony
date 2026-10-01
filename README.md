@@ -55,6 +55,7 @@ if __name__ == "__main__":
 
 ## Release Notes
 
+- 26.10.01 v0.0.21: Clean up async tasks on cancellation; prefer `TRITON_ASYNC_TASKS` over `ASYNC_TASKS`.
 - 24.07.11 Upgrade minimum tritonclient version to 2.34.0
 - 23.08.30 Support `optional` with model input, `parameters` on config.pbtxt
 - 23.06.16 Support tritonclient>=2.34.0
@@ -75,6 +76,10 @@ if __name__ == "__main__":
 ## Install
 
     $ pip install tritony
+
+## Configuration
+
+The default async task count uses `TRITON_ASYNC_TASKS`, then the legacy `ASYNC_TASKS`, then `4`.
 
 ## Test
 
