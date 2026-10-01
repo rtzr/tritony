@@ -42,6 +42,25 @@ TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 30))
 _executor = ThreadPoolExecutor(max_workers=ASYNC_TASKS)
 
 
+async def _cancel_tasks(tasks):
+    """Cancel owned tasks once and finish their cleanup even if cancellation repeats."""
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    pending = set(tasks)
+    cancellation = None
+    while pending:
+        try:
+            _, pending = await asyncio.wait(pending)
+        except asyncio.CancelledError as error:
+            cancellation = error
+    for task in tasks:
+        if not task.cancelled():
+            task.exception()
+    if cancellation is not None:
+        raise cancellation
+
+
 async def data_generator(data: list[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
     """
     batch data generator
@@ -75,11 +94,10 @@ async def send_request_async(
     while True:
         data = asyncio.create_task(data_queue.get(), name="tritony.data_queue.get")
         done = asyncio.create_task(done_event.wait(), name="tritony.done_event.wait")
-        d, pending = await asyncio.wait({data, done}, return_when=asyncio.FIRST_COMPLETED)
-
-        # Cancel pending task
-        for p in pending:
-            p.cancel()
+        try:
+            d, _ = await asyncio.wait({data, done}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            await _cancel_tasks((data, done))
 
         idx, batch_data = None, None
         if data in d:
@@ -572,8 +590,15 @@ class InferenceClient:
             ]
             current_grpc_async_tasks.extend(predict_tasks)
 
-            ret = await asyncio.gather(*predict_tasks, generator, data_queue.join())
-            ret = sorted(itertools.chain(*ret[:ASYNC_TASKS]))
+            current_grpc_async_tasks.append(asyncio.create_task(data_queue.join(), name="tritony.data_queue.join"))
+            pending = set(current_grpc_async_tasks)
+            # Unlike gather, wait does not forward repeated caller cancellation to child cleanup.
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    task.result()
+            ret = [task.result() for task in predict_tasks]
+            ret = sorted(itertools.chain(*ret))
             result_by_req_id = [output_result_list for req_id, output_result_list in ret]
 
             if model_spec.max_batch_size == 0:
@@ -585,15 +610,12 @@ class InferenceClient:
                 result_by_output_name = result_by_output_name[0]
 
             return result_by_output_name
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             loop = asyncio.get_event_loop()
-            cancelled_tasks = []
-
-            for t in current_grpc_async_tasks:
-                if not t.done() and t is not asyncio.current_task():
-                    t.cancel()
-                    cancelled_tasks.append(t)
-            await asyncio.gather(*cancelled_tasks, return_exceptions=True)
+            cancelled_tasks = [task for task in current_grpc_async_tasks if not task.done()]
+            await _cancel_tasks(current_grpc_async_tasks)
+            if isinstance(e, asyncio.CancelledError):
+                raise
             for task in cancelled_tasks:
                 if task.cancelled():
                     continue
