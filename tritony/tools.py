@@ -7,11 +7,13 @@ import logging
 import os
 import time
 import warnings
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import List, Tuple, Union
 
 import grpc
 import numpy as np
+from numpy.typing import NDArray
 from reretry import retry
 from tritonclient import grpc as grpcclient
 from tritonclient import http as httpclient
@@ -39,6 +41,8 @@ TRITON_BACKOFF_COEFF = float(os.environ.get("TRITON_BACKOFF_COEFF", 2))
 TRITON_RETRIES = int(os.environ.get("TRITON_RETRIES", 5))
 TRITON_CLIENT_TIMEOUT = int(os.environ.get("TRITON_CLIENT_TIMEOUT", 30))
 
+InferenceResult = Union[NDArray, Tuple[NDArray, ...], List[NDArray], List[Tuple[NDArray, ...]]]
+
 _executor = ThreadPoolExecutor(max_workers=ASYNC_TASKS)
 
 
@@ -61,7 +65,7 @@ async def _cancel_tasks(tasks):
         raise cancellation
 
 
-async def data_generator(data: list[np.ndarray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
+async def data_generator(data: list[NDArray], batch_size: int, queue: asyncio.Queue, stop: asyncio.Event):
     """
     batch data generator
 
@@ -151,7 +155,7 @@ def request(
     triton_client: grpcclient.InferenceServerClient | httpclient.InferenceServerClient,
     timeout: int,
     compression: str,
-):
+) -> list[NDArray]:
     st = time.time()
 
     if protocol == TritonProtocol.grpc:
@@ -196,7 +200,7 @@ async def request_async(
     timeout: int,
     compression: str,
     use_aio_tritonclient: bool,
-):
+) -> list[NDArray]:
     st = time.time()
 
     if protocol == TritonProtocol.grpc and not use_aio_tritonclient:
@@ -429,11 +433,11 @@ class InferenceClient:
 
     def __call__(
         self,
-        sequences_or_dict: list[np.ndarray] | dict[str, list[Any]] | np.ndarray,
+        sequences_or_dict: NDArray | dict[str, NDArray],
         parameters: dict | None = None,
         model_name: str | None = None,
         model_version: str | None = None,
-    ):
+    ) -> InferenceResult:
         model_spec = self.get_model_spec(model_name, model_version)
 
         if type(sequences_or_dict) in [list, np.ndarray]:
@@ -453,7 +457,7 @@ class InferenceClient:
 
     def build_triton_input(
         self,
-        _input_list: list[np.ndarray],
+        _input_list: Sequence[NDArray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
     ):
@@ -483,11 +487,11 @@ class InferenceClient:
 
     async def aio_infer(
         self,
-        sequences_or_dict: list[np.ndarray] | dict[str, list[Any]] | np.ndarray,
+        sequences_or_dict: NDArray | dict[str, NDArray],
         parameters: dict | None = None,
         model_name: str | None = None,
         model_version: str | None = None,
-    ):
+    ) -> InferenceResult:
         model_spec = await self.async_get_model_spec(model_name, model_version)
 
         if type(sequences_or_dict) in [list, np.ndarray]:
@@ -504,10 +508,10 @@ class InferenceClient:
 
     async def _aio_infer(
         self,
-        data: list[np.ndarray],
+        data: list[NDArray],
         model_spec: TritonModelSpec | None = None,
         parameters: dict | None = None,
-    ) -> np.ndarray | None:
+    ) -> InferenceResult:
         for retry_idx in range(max(2, TRITON_RETRIES)):
             async_result = await self._call_async_item(data=data, model_spec=model_spec, parameters=parameters)
 
@@ -535,10 +539,10 @@ class InferenceClient:
 
     def _call_async(
         self,
-        data: list[np.ndarray],
+        data: list[NDArray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
-    ) -> np.ndarray | None:
+    ) -> InferenceResult:
         for retry_idx in range(max(2, TRITON_RETRIES)):
             async_result = asyncio.run(self._call_async_item(data=data, model_spec=model_spec, parameters=parameters))
 
@@ -566,10 +570,10 @@ class InferenceClient:
 
     async def _call_async_item(
         self,
-        data: list[np.ndarray],
+        data: list[NDArray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
-    ):
+    ) -> InferenceResult | Exception:
         current_grpc_async_tasks = []
 
         try:
@@ -640,10 +644,10 @@ class InferenceClient:
 
     def _call_request(
         self,
-        data: list[np.ndarray],
+        data: list[NDArray],
         model_spec: TritonModelSpec,
         parameters: dict | None = None,
-    ) -> list[np.ndarray]:
+    ) -> InferenceResult:
         for retry_idx in range(max(2, TRITON_RETRIES)):
             try:
                 if model_spec.max_batch_size == 0:
